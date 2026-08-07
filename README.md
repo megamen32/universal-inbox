@@ -1,5 +1,9 @@
 # Universal Inbox Core
 
+This project is the receiving side of the loop. For the sending side, delivery,
+escalation, calls, and AI-to-human attention routing, see
+[NoticePlace / Universal Outbox](https://github.com/megamen32/noticeplace).
+
 > A consumer-neutral local core for normalizing inbox sources, deduplicating items, and exposing a small MCP surface.
 
 Universal Inbox keeps source facts and cursors in durable SQLite storage while leaving credentials, provider sessions, summaries, and consumer routing outside the Core. The current package includes read-only adapter seams for injected Gmail and Telegram Web readers; it does not silently log in, send messages, or perform production cutovers.
@@ -41,3 +45,7 @@ python -m pytest -q
 - [Package metadata](pyproject.toml)
 
 External Gmail, Telegram, VK, WhatsApp, and document integrations remain explicit adapter and authentication decisions; they are not enabled by this install.
+
+## Related project
+
+- [NoticePlace / Universal Outbox](https://github.com/megamen32/noticeplace) — sends important AI attention through configured human channels.
