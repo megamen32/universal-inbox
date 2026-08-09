@@ -69,9 +69,8 @@ adapter и сами формулируют полезную человеку с�
 ### Уже существует вне Core
 
 - Hermes Gmail unified-inbox slice с двумя Gmail accounts и Inbox/Spam.
-- Hermes Telegram Web preview reader через shared BrowserOS и normal MCP на
-  `127.0.0.1:9000`; это отдельный read-only source, пока не Universal Core
-  adapter.
+- User-owned Telegram MCP bridge with `chats/read/send`; Core consumes only its
+  provider-neutral read seam and does not own its credentials or session.
 - Локальный fork `forks/mcp-telegram-inbox` от `@overpod/mcp-telegram`.
   Его публичная registration boundary ограничена восемью tools: status,
   login/logout, list chats, read messages, unread, explicit send и download.
@@ -130,7 +129,8 @@ class InboxAdapter(Protocol):
 
 `execute` существует только для capability `EXPLICIT_ACTION`; Core никогда не
 вызывает его во время poll, digest или summary. Реальные transport details
-(MCP stdio, HTTP, provider SDK, BrowserOS) остаются внутри adapter.
+(MCP stdio, HTTP, provider SDK) остаются внутри adapter; Telegram BrowserOS не
+является допустимым transport fallback.
 
 ## 5. Порядок реализации
 
@@ -211,29 +211,16 @@ adapter отображается как partial failure.
 
 #### D1. Выбрать runtime, не смешивая representations
 
-Есть два независимых кандидата:
+Выбран единый прямой Telegram MCP/MTProto adapter. BrowserOS Telegram Web не
+является Core runtime и не должен возвращаться как скрытый fallback.
 
-- **Telegram Web / BrowserOS adapter** — уже доступен, read-only, использует
-  shared authenticated browser profile, видит только lossy browser previews.
-- **MTProto user-account adapter** — нужен для устойчивого history/search,
-  explicit send и download; требует легитимный daemon-owned API credentials и
-  отдельную user-owned session.
+#### D2. BrowserOS adapter — удалён из Core
 
-Решение фиксируется до реализации. Нельзя подменять одно другим тихо.
+Не добавлять Telegram Web/BrowserOS adapter, browser profile, DOMSnapshot или
+browser cookie/session path. Любой read path должен входить через
+provider-neutral adapter seam и user-owned Telegram MCP runtime.
 
-#### D2. BrowserOS adapter (быстрый read-only путь)
-
-1. Упаковать существующий fixed DOMSnapshot reader как `telegram-web` adapter.
-2. Сохранять `representation=preview`, source page/chat identifiers, snapshot
-   timestamp и truncation flags.
-3. Не считать отсутствие DOM rows доказательством пустого inbox.
-4. Реализовать poll и read-only status; не реализовывать send/download через
-   BrowserOS без отдельного action contract.
-
-Канарейка: текущий Telegram Web tab даёт несколько bounded preview items;
-повторный poll добавляет ноль и сохраняет provenance.
-
-#### D3. MTProto adapter (полный capability путь)
+#### D3. Telegram MCP/MTProto adapter (полный capability путь)
 
 1. Довести локальный fork до доказуемо минимального public manifest из восьми
    tools; удалить/не регистрировать остальной surface.
@@ -241,7 +228,7 @@ adapter отображается как partial failure.
 3. User сам завершает QR/2FA login. Никакой session export/import/browser
    cookie migration.
 4. Adapter bridge вызывает только list/read/unread/status в poll; send/download
-   доступны только через `ExplicitAction`.
+   доступны только через `ExplicitAction` с durable human evidence.
 5. Сопоставить `telegram chat + message id` с Universal `ItemIdentity`.
 6. Добавить attachment metadata, bounded download policy, file receipt и
    failure classification.
@@ -383,11 +370,9 @@ agent summary → текущий topic ровно один раз; legacy poll �
 1. Фаза A: настоящий Core MCP transport.
 2. Фаза B: adapter registry/poll/status.
 3. Фаза C: Gmail adapter и shadow comparison.
-4. Фаза D2: Telegram Web read-only adapter — самый быстрый способ не терять
-   Telegram, пока D3 не имеет легитимного MTProto runtime.
-5. Фаза E: Hermes topic summary/search consumer.
-6. Фаза J: controlled Gmail cutover, только после real E2E proof.
-7. D3 MTProto, VK, WhatsApp и documents — по отдельным user-owned auth и
+4. Фаза E: Hermes topic summary/search consumer.
+5. Фаза J: controlled Gmail cutover, только после real E2E proof.
+6. D3 Telegram MCP/MTProto, VK, WhatsApp и documents — по отдельным user-owned auth и
    value gates, в этом порядке: Telegram MTProto, WhatsApp, VK, documents.
 8. Фаза I hardening идёт перед каждым новым production source и перед final
    cutover, но не блокирует локальные contract slices.
@@ -397,8 +382,8 @@ agent summary → текущий topic ровно один раз; legacy poll �
 | Source | Poll / search | Read detail | Send | Download | Current decision |
 | --- | --- | --- | --- | --- | --- |
 | Gmail | да | да | later explicit | explicit | production evidence exists, Core adapter absent |
-| Telegram Web | да, previews | bounded preview | нет | нет | fastest read-only bridge |
-| Telegram MTProto | да | да | explicit | explicit | needs separate legitimate daemon/login |
+| Telegram Web/BrowserOS | removed | removed | removed | removed | explicitly excluded from Core |
+| Telegram MCP/MTProto | да | да | explicit + evidence | explicit | needs separate legitimate daemon/login |
 | VK | planned | planned | later explicit | later explicit | auth seam unselected |
 | WhatsApp | planned | planned | later explicit | later explicit | user-owned pairing unselected |
 | Documents | planned | metadata/preview | n/a | explicit | providers unselected |

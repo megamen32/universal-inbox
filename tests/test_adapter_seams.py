@@ -10,7 +10,7 @@ import pytest
 from universal_inbox.adapter import PermanentAdapterError
 from universal_inbox.adapters._read_only import ReadOnlyPage
 from universal_inbox.adapters.gmail import GmailPreview, GmailReadAdapter
-from universal_inbox.adapters.telegram_web import TelegramWebPreview, TelegramWebReadAdapter
+from universal_inbox.adapters.telegram_mcp import TelegramMcpPreview, TelegramMcpReadAdapter
 from universal_inbox.consumer import HermesNeutralConsumer
 from universal_inbox.contracts import Capability, InboxCursor, InboxItem, ItemIdentity
 
@@ -65,11 +65,11 @@ def test_gmail_adapter_maps_injected_reader_to_canonical_poll_batch_and_status()
 def test_telegram_adapter_maps_injected_reader_to_canonical_poll_batch_and_status() -> None:
     calls: list[tuple[InboxCursor | None, int]] = []
 
-    def reader(cursor: InboxCursor | None, limit: int) -> ReadOnlyPage[TelegramWebPreview]:
+    def reader(cursor: InboxCursor | None, limit: int) -> ReadOnlyPage[TelegramMcpPreview]:
         calls.append((cursor, limit))
         return ReadOnlyPage(
             items=(
-                TelegramWebPreview(
+                TelegramMcpPreview(
                     chat_id="chat-42",
                     message_id="m-7",
                     sender="Ari",
@@ -81,8 +81,8 @@ def test_telegram_adapter_maps_injected_reader_to_canonical_poll_batch_and_statu
             capabilities=frozenset({Capability.POLL}),
         )
 
-    adapter = TelegramWebReadAdapter(
-        adapter_id="telegram-web-adapter",
+    adapter = TelegramMcpReadAdapter(
+        adapter_id="telegram-mcp-adapter",
         reader=reader,
         capabilities=frozenset({Capability.POLL}),
     )
@@ -99,7 +99,7 @@ def test_telegram_adapter_maps_injected_reader_to_canonical_poll_batch_and_statu
 
     status = adapter.status()
     assert status.source == "telegram"
-    assert status.adapter_id == "telegram-web-adapter"
+    assert status.adapter_id == "telegram-mcp-adapter"
     assert status.cursor == InboxCursor("telegram-c-8", source="telegram")
     assert status.item_count == 1
     assert adapter.get(ItemIdentity("telegram", "chat-42:m-7")) == batch.items[0]

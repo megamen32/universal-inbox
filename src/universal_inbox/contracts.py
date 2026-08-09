@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+import hashlib
+import json
 from typing import Iterable
+
+from .outbound import OutboundAuthorization
 
 
 def _normalize_text(value: str, field_name: str) -> str:
@@ -101,11 +105,44 @@ class ExplicitAction:
     identity: ItemIdentity
     kind: str
     note: str | None = None
+    payload: tuple[tuple[str, str], ...] = ()
+    authorization: OutboundAuthorization | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "kind", _normalize_text(self.kind, "kind").lower())
         if self.note is not None:
             object.__setattr__(self, "note", self.note.strip())
+        normalized_payload = tuple((str(key), str(value)) for key, value in self.payload)
+        object.__setattr__(self, "payload", normalized_payload)
+        if self.kind in {"send", "reply", "comment", "publish"}:
+            if not self.note or self.authorization is None:
+                raise ValueError("outbound actions require exact human confirmation evidence")
+            self.authorization.verify()
+            if self.authorization.draft.action_hash != self.action_hash:
+                raise ValueError("confirmation evidence does not match the exact action payload")
+
+    def verify_for_execution(self) -> None:
+        """Recheck durable evidence immediately before a provider write."""
+
+        if self.kind in {"send", "reply", "comment", "publish"}:
+            if self.authorization is None:
+                raise ValueError("outbound action has no authorization")
+            self.authorization.verify()
+
+    @property
+    def canonical_payload(self) -> dict[str, object]:
+        return {
+            "source": self.identity.source,
+            "item_id": self.identity.item_id,
+            "kind": self.kind,
+            "note": self.note or "",
+            "payload": list(self.payload),
+        }
+
+    @property
+    def action_hash(self) -> str:
+        encoded = json.dumps(self.canonical_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)

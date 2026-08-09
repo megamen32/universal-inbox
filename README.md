@@ -6,7 +6,9 @@ escalation, calls, and AI-to-human attention routing, see
 
 > A consumer-neutral local core for normalizing inbox sources, deduplicating items, and exposing a small MCP surface.
 
-Universal Inbox keeps source facts and cursors in durable SQLite storage while leaving credentials, provider sessions, summaries, and consumer routing outside the Core. The current package includes read-only adapter seams for injected Gmail and Telegram Web readers; it does not silently log in, send messages, or perform production cutovers.
+Universal Inbox keeps source facts and cursors in durable SQLite storage while leaving credentials, provider sessions, summaries, and consumer routing outside the Core. The current package includes read-only adapter seams for injected Gmail and Telegram MCP readers; it does not silently log in, send messages, or perform production cutovers.
+
+Telegram Web/BrowserOS is not a Core adapter. Telegram MCP readers enter through the provider-neutral adapter seam, while any future outbound action must carry durable human evidence: exact payload hash, raw and normalized human response, harness, session, actor, and UTC confirmation time. The affirmative response is exactly `да`; evidence is persisted before a provider write.
 
 ## Install
 

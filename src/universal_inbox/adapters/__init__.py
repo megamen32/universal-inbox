@@ -1,11 +1,11 @@
 """Read-only adapter seams for dependency-free source ingestion."""
 
 from .gmail import GmailPreview, GmailReadAdapter
-from .telegram_web import TelegramWebPreview, TelegramWebReadAdapter
+from .telegram_mcp import TelegramMcpPreview, TelegramMcpReadAdapter
 
 __all__ = [
     "GmailPreview",
     "GmailReadAdapter",
-    "TelegramWebPreview",
-    "TelegramWebReadAdapter",
+    "TelegramMcpPreview",
+    "TelegramMcpReadAdapter",
 ]

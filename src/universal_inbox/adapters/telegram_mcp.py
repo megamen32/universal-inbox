@@ -1,4 +1,4 @@
-"""Dependency-free Telegram Web read adapter seam."""
+"""Dependency-free Telegram MCP read adapter seam."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from ._read_only import ReadOnlyInboxAdapter
 
 
 @dataclass(frozen=True, slots=True)
-class TelegramWebPreview:
+class TelegramMcpPreview:
     chat_id: str
     message_id: str
     text: str | None = None
@@ -17,7 +17,7 @@ class TelegramWebPreview:
     cursor: str | None = None
 
 
-def _telegram_item_mapper(record: TelegramWebPreview, source: str) -> InboxItem:
+def _telegram_item_mapper(record: TelegramMcpPreview, source: str) -> InboxItem:
     identity = ItemIdentity(source=source, item_id=f"{record.chat_id}:{record.message_id}")
     return InboxItem(
         identity=identity,
@@ -27,14 +27,10 @@ def _telegram_item_mapper(record: TelegramWebPreview, source: str) -> InboxItem:
     )
 
 
-class TelegramWebReadAdapter(ReadOnlyInboxAdapter[TelegramWebPreview]):
-    def __init__(
-        self,
-        *,
-        adapter_id: str,
-        reader,
-        capabilities=(),
-    ) -> None:
+class TelegramMcpReadAdapter(ReadOnlyInboxAdapter[TelegramMcpPreview]):
+    """Normalize injected MCP `read` results without owning credentials or transport."""
+
+    def __init__(self, *, adapter_id: str, reader, capabilities=()) -> None:
         super().__init__(
             adapter_id=adapter_id,
             source="telegram",
