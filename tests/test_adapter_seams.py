@@ -9,7 +9,7 @@ import pytest
 
 from universal_inbox.adapter import PermanentAdapterError
 from universal_inbox.adapters._read_only import ReadOnlyPage
-from universal_inbox.adapters.gmail import GmailPreview, GmailReadAdapter
+from universal_inbox.adapters.gmail import GmailHimalayaReader, GmailPreview, GmailReadAdapter
 from universal_inbox.adapters.telegram_mcp import TelegramMcpPreview, TelegramMcpReadAdapter
 from universal_inbox.consumer import HermesNeutralConsumer
 from universal_inbox.contracts import Capability, InboxCursor, InboxItem, ItemIdentity
@@ -60,6 +60,46 @@ def test_gmail_adapter_maps_injected_reader_to_canonical_poll_batch_and_status()
     assert adapter.get(ItemIdentity("gmail", "gm-1")) == batch.items[0]
     with pytest.raises(PermanentAdapterError):
         adapter.execute(object())  # type: ignore[arg-type]
+
+
+def test_gmail_himalaya_reader_maps_envelopes_and_resumes_after_cursor() -> None:
+    payload = {
+        "envelopes": [
+            {
+                "id": "43297",
+                "message-id": "new@example.invalid",
+                "subject": "Newest",
+                "from": [{"name": "Sender", "email": "sender@example.invalid"}],
+                "date": "2026-08-09T10:00:00Z",
+            },
+            {
+                "id": "43296",
+                "message-id": "old@example.invalid",
+                "subject": "Older",
+                "from": [],
+                "date": "2026-08-09T09:00:00Z",
+            },
+        ]
+    }
+    calls: list[tuple[str, ...]] = []
+
+    class Runner:
+        def run(self, argv: tuple[str, ...], *, timeout_seconds: float, max_stdout_bytes: int) -> str:
+            calls.append(argv)
+            return __import__("json").dumps(payload)
+
+    reader = GmailHimalayaReader(Runner(), account="gmail", mailbox="Inbox")
+
+    first = reader(None, 10)
+    assert [item.message_id for item in first.items] == ["old@example.invalid", "new@example.invalid"]
+    assert first.next_cursor == "new@example.invalid"
+    assert first.items[0].subject == "Older"
+    assert first.items[1].sender == "Sender <sender@example.invalid>"
+
+    resumed = reader(InboxCursor("old@example.invalid", source="gmail"), 10)
+    assert [item.message_id for item in resumed.items] == ["new@example.invalid"]
+    assert resumed.next_cursor == "new@example.invalid"
+    assert calls[0][:6] == ("himalaya", "-a", "gmail", "--json", "envelope", "list")
 
 
 def test_telegram_adapter_maps_injected_reader_to_canonical_poll_batch_and_status() -> None:

@@ -33,7 +33,7 @@ python -m universal_inbox --db-path ./inbox.sqlite3
 python -m universal_inbox.transport --db-path ./inbox.sqlite3
 ```
 
-The service supports JSON-RPC `initialize`, `tools/list`, and `tools/call` for search, bounded digest candidates, item lookup, adapter manifests, source status, and polling. With an empty default registry, polling is intentionally a successful no-op.
+The service supports JSON-RPC `initialize`, `tools/list`, and `tools/call` for search, bounded digest candidates, item lookup, adapter manifests, source status, and polling. When the local `himalaya` binary has an allowlisted account configuration, the default registry exposes a read-only Gmail Inbox adapter; otherwise polling remains an intentional successful no-op.
 
 ## Verify
 
@@ -46,7 +46,7 @@ python -m pytest -q
 - [Development plan](DEVELOPMENT_PLAN.md)
 - [Package metadata](pyproject.toml)
 
-External Gmail, Telegram, VK, WhatsApp, and document integrations remain explicit adapter and authentication decisions; they are not enabled by this install.
+The local Gmail adapter uses the already-authenticated `himalaya` CLI and never writes mail. Telegram, VK, WhatsApp, and document integrations remain explicit adapter and authentication decisions; they are not enabled by this install.
 
 ## Related project
 

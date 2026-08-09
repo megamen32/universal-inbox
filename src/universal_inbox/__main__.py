@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any, TextIO
 
 from .mcp_surface import CoreMcpSurface
+from .adapters.gmail import GmailHimalayaReader, GmailReadAdapter
+from .registry import AdapterRegistry
 from .store import SQLiteInboxStore
 
 
@@ -88,8 +92,36 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     with SQLiteInboxStore(args.db_path) as store:
-        _StdioJsonRpcTransport(CoreMcpSurface(store), sys.stdin, sys.stdout).serve()
+        _StdioJsonRpcTransport(
+            CoreMcpSurface(store, registry=_default_registry()),
+            sys.stdin,
+            sys.stdout,
+        ).serve()
     return 0
+
+
+def _default_registry() -> AdapterRegistry:
+    """Register only the local, already-configured read-only Gmail seam."""
+
+    binary = os.getenv("UNIVERSAL_INBOX_HIMALAYA_BIN", "himalaya").strip()
+    if not binary or shutil.which(binary) is None:
+        return AdapterRegistry()
+    account = os.getenv("UNIVERSAL_INBOX_GMAIL_ACCOUNT", "gmail").strip()
+    mailbox = os.getenv("UNIVERSAL_INBOX_GMAIL_MAILBOX", "Inbox").strip()
+    if account not in {"gmail", "careviolan"} or mailbox not in {"Inbox", "[Gmail]/Спам"}:
+        return AdapterRegistry()
+    return AdapterRegistry(
+        [
+            GmailReadAdapter(
+                adapter_id=f"gmail-{account}-{mailbox.lower().replace('/', '-')}",
+                reader=GmailHimalayaReader(
+                    binary=binary,
+                    account=account,
+                    mailbox=mailbox,
+                ),
+            )
+        ]
+    )
 
 
 if __name__ == "__main__":
