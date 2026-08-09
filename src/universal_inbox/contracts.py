@@ -136,7 +136,7 @@ class ExplicitAction:
             "item_id": self.identity.item_id,
             "kind": self.kind,
             "note": self.note or "",
-            "payload": list(self.payload),
+            "payload": [[key, value] for key, value in self.payload],
         }
 
     @property

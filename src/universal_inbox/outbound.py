@@ -47,7 +47,7 @@ class OutboundDraft:
             "item_id": self.item_id,
             "kind": self.kind,
             "note": self.note,
-            "payload": list(self.payload),
+            "payload": [[key, value] for key, value in self.payload],
         }
 
     @property
