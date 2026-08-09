@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import pytest
 
 from universal_inbox.adapter import PermanentAdapterError
+from universal_inbox.__main__ import _default_registry
 from universal_inbox.adapters._read_only import ReadOnlyPage
 from universal_inbox.adapters.gmail import GmailHimalayaReader, GmailPreview, GmailReadAdapter
 from universal_inbox.adapters.telegram_mcp import TelegramMcpPreview, TelegramMcpReadAdapter
@@ -100,6 +101,15 @@ def test_gmail_himalaya_reader_maps_envelopes_and_resumes_after_cursor() -> None
     assert [item.message_id for item in resumed.items] == ["new@example.invalid"]
     assert resumed.next_cursor == "new@example.invalid"
     assert calls[0][:6] == ("himalaya", "-a", "gmail", "--json", "envelope", "list")
+
+
+def test_default_registry_registers_both_allowlisted_gmail_accounts() -> None:
+    manifests = _default_registry().manifests()
+    assert [manifest.adapter_id for manifest in manifests] == [
+        "gmail-gmail-inbox",
+        "gmail-careviolan-inbox",
+    ]
+    assert [manifest.source for manifest in manifests] == ["gmail", "gmail:careviolan"]
 
 
 def test_telegram_adapter_maps_injected_reader_to_canonical_poll_batch_and_status() -> None:

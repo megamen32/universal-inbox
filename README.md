@@ -46,7 +46,11 @@ python -m pytest -q
 - [Development plan](DEVELOPMENT_PLAN.md)
 - [Package metadata](pyproject.toml)
 
-The local Gmail adapter uses the already-authenticated `himalaya` CLI and never writes mail. Telegram, VK, WhatsApp, and document integrations remain explicit adapter and authentication decisions; they are not enabled by this install.
+The local Gmail adapters use the already-authenticated `himalaya` CLI for the
+allowlisted `gmail` and `careviolan` accounts and never write mail. Override the
+account list with `UNIVERSAL_INBOX_GMAIL_ACCOUNTS` when needed. Telegram, VK,
+WhatsApp, and document integrations remain explicit adapter and authentication
+decisions; they are not enabled by this install.
 
 ## Related project
 

@@ -106,22 +106,30 @@ def _default_registry() -> AdapterRegistry:
     binary = os.getenv("UNIVERSAL_INBOX_HIMALAYA_BIN", "himalaya").strip()
     if not binary or shutil.which(binary) is None:
         return AdapterRegistry()
-    account = os.getenv("UNIVERSAL_INBOX_GMAIL_ACCOUNT", "gmail").strip()
     mailbox = os.getenv("UNIVERSAL_INBOX_GMAIL_MAILBOX", "Inbox").strip()
-    if account not in {"gmail", "careviolan"} or mailbox not in {"Inbox", "[Gmail]/Спам"}:
+    accounts = tuple(
+        account.strip()
+        for account in os.getenv("UNIVERSAL_INBOX_GMAIL_ACCOUNTS", "gmail,careviolan").split(",")
+        if account.strip()
+    )
+    if mailbox not in {"Inbox", "[Gmail]/Спам"}:
         return AdapterRegistry()
-    return AdapterRegistry(
-        [
+    adapters = []
+    for account in dict.fromkeys(accounts):
+        if account not in {"gmail", "careviolan"}:
+            continue
+        adapters.append(
             GmailReadAdapter(
                 adapter_id=f"gmail-{account}-{mailbox.lower().replace('/', '-')}",
+                source="gmail" if account == "gmail" else f"gmail:{account}",
                 reader=GmailHimalayaReader(
                     binary=binary,
                     account=account,
                     mailbox=mailbox,
                 ),
             )
-        ]
-    )
+        )
+    return AdapterRegistry(adapters)
 
 
 if __name__ == "__main__":

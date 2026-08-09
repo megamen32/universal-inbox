@@ -93,7 +93,7 @@ class GmailHimalayaReader:
         timeout_seconds: float = 20.0,
         max_stdout_bytes: int = 2_000_000,
     ) -> None:
-        if not binary.strip() or not account.strip() or mailbox not in {"Inbox", "[Gmail]/Спам"}:
+        if not binary.strip() or account not in {"gmail", "careviolan"} or mailbox not in {"Inbox", "[Gmail]/Спам"}:
             raise ValueError("Gmail command, account, and mailbox must be allowlisted")
         if snapshot_size < 1 or timeout_seconds <= 0 or max_stdout_bytes < 1:
             raise ValueError("Gmail reader bounds must be positive")
@@ -189,11 +189,12 @@ class GmailReadAdapter(ReadOnlyInboxAdapter[GmailPreview]):
         *,
         adapter_id: str,
         reader,
+        source: str = "gmail",
         capabilities=(),
     ) -> None:
         super().__init__(
             adapter_id=adapter_id,
-            source="gmail",
+            source=source,
             reader=reader,
             item_mapper=_gmail_item_mapper,
             capabilities=capabilities,
