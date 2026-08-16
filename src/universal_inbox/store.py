@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from pathlib import Path
 
 from .contracts import (
@@ -82,8 +83,25 @@ class SQLiteInboxStore:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (source, adapter_id, request_id)
                 );
+                CREATE TABLE IF NOT EXISTS wake_outbox (
+                    source TEXT NOT NULL,
+                    item_id TEXT NOT NULL,
+                    ref TEXT NOT NULL,
+                    delivered INTEGER NOT NULL DEFAULT 0,
+                    claimed_by TEXT,
+                    claimed_until REAL,
+                    claim_epoch INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (source, item_id)
+                );
                 """
             )
+            columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(wake_outbox)")}
+            if "claimed_by" not in columns:
+                self._connection.execute("ALTER TABLE wake_outbox ADD COLUMN claimed_by TEXT")
+            if "claimed_until" not in columns:
+                self._connection.execute("ALTER TABLE wake_outbox ADD COLUMN claimed_until REAL")
+            if "claim_epoch" not in columns:
+                self._connection.execute("ALTER TABLE wake_outbox ADD COLUMN claim_epoch INTEGER NOT NULL DEFAULT 0")
 
     def close(self) -> None:
         self._connection.close()
@@ -123,7 +141,7 @@ class SQLiteInboxStore:
         ).fetchone()
         return None if row is None else InboxCursor(row["cursor_value"], source=source)
 
-    def ingest(self, item: InboxItem) -> bool:
+    def ingest(self, item: InboxItem, *, advance_cursor: bool = True) -> bool:
         payload = self._item_payload(item)
         encoded = self._encode(payload)
         source, item_id = item.identity.source, item.identity.item_id
@@ -134,12 +152,13 @@ class SQLiteInboxStore:
             if row is not None:
                 if row["payload_json"] != encoded:
                     raise ItemConflictError(f"conflicting item for {source}/{item_id}")
-                if item.cursor is not None:
+                if advance_cursor and item.cursor is not None:
                     self._connection.execute(
                         "UPDATE items SET cursor_value = ? WHERE source = ? AND item_id = ?",
                         (item.cursor.value, source, item_id),
                     )
-                self._upsert_cursor(item.cursor)
+                if advance_cursor:
+                    self._upsert_cursor(item.cursor)
                 return False
             self._connection.execute(
                 """
@@ -157,8 +176,67 @@ class SQLiteInboxStore:
                     encoded,
                 ),
             )
-            self._upsert_cursor(item.cursor)
+            if advance_cursor:
+                self._upsert_cursor(item.cursor)
             return True
+
+    def claim_wake(
+        self,
+        identity: ItemIdentity,
+        ref: str,
+        owner: str,
+        *,
+        lease_seconds: float = 120.0,
+    ) -> tuple[str, bool, bool, int]:
+        """Persist and atomically claim one wake for one dispatcher owner.
+
+        Returns ``(ref, delivered, claimed)``. A false ``claimed`` means
+        another live dispatcher owns the lease and the source cursor must not
+        advance past this item.
+        """
+        if not ref.strip():
+            raise ValueError("wake ref must not be empty")
+        if not owner.strip() or lease_seconds <= 0:
+            raise ValueError("wake owner and lease must be valid")
+        now = time.time()
+        with self._connection:
+            self._connection.execute(
+                "INSERT OR IGNORE INTO wake_outbox(source, item_id, ref) VALUES (?, ?, ?)",
+                (identity.source, identity.item_id, ref),
+            )
+            row = self._connection.execute(
+                "SELECT ref, delivered, claimed_by, claimed_until, claim_epoch FROM wake_outbox WHERE source=? AND item_id=?",
+                (identity.source, identity.item_id),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("wake outbox row was not persisted")
+            if row["delivered"]:
+                return str(row["ref"]), True, False, int(row["claim_epoch"])
+            current_owner = row["claimed_by"]
+            claimed_until = row["claimed_until"]
+            if current_owner and current_owner != owner and claimed_until and float(claimed_until) > now:
+                return str(row["ref"]), False, False, int(row["claim_epoch"])
+            claim_epoch = int(row["claim_epoch"]) + 1
+            self._connection.execute(
+                "UPDATE wake_outbox SET claimed_by=?, claimed_until=?, claim_epoch=? WHERE source=? AND item_id=? AND delivered=0",
+                (owner, now + lease_seconds, claim_epoch, identity.source, identity.item_id),
+            )
+        return str(row["ref"]), False, True, claim_epoch
+
+    def mark_wake_delivered(self, identity: ItemIdentity, owner: str, claim_epoch: int) -> bool:
+        with self._connection:
+            result = self._connection.execute(
+                "UPDATE wake_outbox SET delivered=1, claimed_by=NULL, claimed_until=NULL WHERE source=? AND item_id=? AND claimed_by=? AND claim_epoch=? AND delivered=0",
+                (identity.source, identity.item_id, owner, claim_epoch),
+            )
+        return result.rowcount == 1
+
+    def release_wake_claim(self, identity: ItemIdentity, owner: str, claim_epoch: int) -> None:
+        with self._connection:
+            self._connection.execute(
+                "UPDATE wake_outbox SET claimed_by=NULL, claimed_until=NULL WHERE source=? AND item_id=? AND claimed_by=? AND claim_epoch=? AND delivered=0",
+                (identity.source, identity.item_id, owner, claim_epoch),
+            )
 
     def advance_source_cursor(self, source: str, cursor: InboxCursor | None) -> None:
         if cursor is None:
@@ -167,7 +245,8 @@ class SQLiteInboxStore:
         if cursor.source is not None and cursor.source != normalized_source:
             raise ValueError("cursor source must match the provided source")
         persisted = cursor if cursor.source == normalized_source else InboxCursor(cursor.value, source=normalized_source)
-        self._upsert_cursor(persisted)
+        with self._connection:
+            self._upsert_cursor(persisted)
 
     def record_source_status(self, status: SourceStatus) -> bool:
         payload = self._encode(self._source_status_payload(status))

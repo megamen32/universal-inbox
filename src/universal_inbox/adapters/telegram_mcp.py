@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..contracts import InboxCursor, InboxItem, ItemIdentity
-from ._read_only import ReadOnlyInboxAdapter
+from ._read_only import ReadOnlyInboxAdapter, ReadOnlyPage
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,11 +30,27 @@ def _telegram_item_mapper(record: TelegramMcpPreview, source: str) -> InboxItem:
 class TelegramMcpReadAdapter(ReadOnlyInboxAdapter[TelegramMcpPreview]):
     """Normalize injected MCP `read` results without owning credentials or transport."""
 
-    def __init__(self, *, adapter_id: str, reader, capabilities=()) -> None:
+    def __init__(self, *, adapter_id: str, reader, capabilities=(), allowed_chat_ids=None) -> None:
+        normalized_allowlist = None if allowed_chat_ids is None else frozenset(
+            chat_id.strip() for chat_id in allowed_chat_ids if isinstance(chat_id, str) and chat_id.strip()
+        )
+        if allowed_chat_ids is not None and not normalized_allowlist:
+            raise ValueError("allowed_chat_ids must contain at least one chat id")
+
+        def filtered_reader(cursor, limit):
+            page = reader(cursor, limit)
+            if normalized_allowlist is None:
+                return page
+            return ReadOnlyPage(
+                items=tuple(item for item in page.items if item.chat_id in normalized_allowlist),
+                next_cursor=page.next_cursor,
+                capabilities=page.capabilities,
+            )
+
         super().__init__(
             adapter_id=adapter_id,
             source="telegram",
-            reader=reader,
+            reader=filtered_reader,
             item_mapper=_telegram_item_mapper,
             capabilities=capabilities,
         )

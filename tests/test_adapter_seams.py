@@ -155,6 +155,32 @@ def test_telegram_adapter_maps_injected_reader_to_canonical_poll_batch_and_statu
     assert adapter.get(ItemIdentity("telegram", "chat-42:m-7")) == batch.items[0]
 
 
+def test_telegram_adapter_filters_to_explicit_chat_allowlist() -> None:
+    def reader(_cursor: InboxCursor | None, _limit: int) -> ReadOnlyPage[TelegramMcpPreview]:
+        return ReadOnlyPage(
+            items=(
+                TelegramMcpPreview(chat_id="dm-1", message_id="m-1", text="allowed dm"),
+                TelegramMcpPreview(chat_id="group-1", message_id="m-2", text="allowed group"),
+                TelegramMcpPreview(chat_id="unselected", message_id="m-3", text="must not wake"),
+            ),
+            next_cursor="telegram-c-3",
+            capabilities=frozenset({Capability.POLL}),
+        )
+
+    adapter = TelegramMcpReadAdapter(
+        adapter_id="telegram-allowlisted",
+        reader=reader,
+        allowed_chat_ids={"dm-1", "group-1"},
+    )
+
+    batch = adapter.poll(None, limit=10)
+
+    assert [item.identity for item in batch.items] == [
+        ItemIdentity("telegram", "dm-1:m-1"),
+        ItemIdentity("telegram", "group-1:m-2"),
+    ]
+
+
 def test_consumer_calls_core_surface_search_and_digest_only() -> None:
     calls: list[tuple[str, dict[str, object]]] = []
 
