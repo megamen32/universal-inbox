@@ -18,12 +18,16 @@
 - Published revisions: Universal Inbox `4f755cf` adds immutable-release
   installer plus loopback webhook and Matrix systemd units; NoticePlace
   `29224c4` registers generic Telegram message delivery.
-- Blockers to full bidirectional proof: rotate the exposed MatrixRTC bridge
-  credential with its counterpart owner; deploy task-owned revisions; install
-  one Inbox service on loopback port 18092 and scoped consumers; obtain/join an
-  exact Matrix room for the two-message canary. The callback-actor and
-  message-sender allowlists are now separate. SSS inventory timed out after
-  300 seconds.
+- Live proof (2026-08-17): `universal-inbox-webhook.service` and
+  `universal-inbox-matrix.service` are active; loopback ingress listens on
+  `127.0.0.1:18092`. Matrix event
+  `$8-_Le4uOSVGVohAn6lYlRbE2rC_YOvwS8r_EwSb_UGM` reached Telegram as receipt
+  `message_id=9950`. Telegram message `540308572:9951` was ingested and
+  delivered to Matrix as event
+  `$DiAsy7UGKawEXmOxan6a8bZ3dJyX051PmSwm0DDCz9U`; the following Matrix poll did
+  not ingest that outbound event, proving the self-sender loop guard.
+- MatrixRTC credential rotation remains intentionally deferred by user
+  direction. The callback-actor and message-sender allowlists are separate.
 - Safety: preserve foreign dirty files; never print provider tokens; loop guard
   filters own/bot senders and exact allowlisted chats/rooms; deploy/restart and
   external sends must be reported as consequential boundaries.
