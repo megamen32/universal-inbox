@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SOURCE_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+RELEASE_ROOT=/opt/universal-inbox-releases
+APP_ROOT=/opt/universal-inbox
+CONFIG=/etc/universal-inbox.env
+STATE_ROOT=/var/lib/universal-inbox
+NO_START=0
+
+usage() {
+    printf '%s\n' 'Usage: sudo deploy/universal-inbox install|upgrade [--no-start]'
+}
+
+command=${1:-}
+shift || true
+while (($#)); do
+    case "$1" in
+        --no-start) NO_START=1 ;;
+        *) usage; exit 2 ;;
+    esac
+    shift
+done
+case "$command" in
+    install|upgrade) ;;
+    *) usage; exit 2 ;;
+esac
+
+[[ $(id -u) -eq 0 ]] || { printf '%s\n' 'must run as root' >&2; exit 1; }
+revision=$(git -C "$SOURCE_ROOT" rev-parse --verify HEAD)
+release="$RELEASE_ROOT/$revision"
+if [[ ! -d "$release" ]]; then
+    install -d -m 0755 "$release"
+    git -C "$SOURCE_ROOT" archive --format=tar "$revision" | tar -x -C "$release"
+fi
+install -d -o notification-center -g notification-center -m 0750 "$STATE_ROOT"
+install -D -m 0644 "$release/deploy/universal-inbox-webhook.service" /etc/systemd/system/universal-inbox-webhook.service
+install -D -m 0644 "$release/deploy/universal-inbox-matrix.service" /etc/systemd/system/universal-inbox-matrix.service
+if [[ ! -e "$CONFIG" ]]; then
+    install -m 0600 "$release/deploy/universal-inbox.env.example" "$CONFIG"
+fi
+ln -sfn "$release" "$APP_ROOT"
+systemctl daemon-reload
+systemctl enable universal-inbox-webhook.service universal-inbox-matrix.service
+if (( ! NO_START )); then
+    systemctl restart universal-inbox-webhook.service universal-inbox-matrix.service
+fi
+printf '%s\n' "$release"

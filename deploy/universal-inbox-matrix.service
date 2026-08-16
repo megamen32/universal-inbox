@@ -1,0 +1,22 @@
+[Unit]
+Description=Universal Inbox Matrix sync ingress
+After=network-online.target universal-inbox-webhook.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=notification-center
+Group=notification-center
+EnvironmentFile=/etc/universal-inbox.env
+Environment=PYTHONPATH=/opt/universal-inbox/src
+WorkingDirectory=/opt/universal-inbox
+ExecStart=/usr/bin/python3 -m universal_inbox.noticeplace_runtime --source matrix
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ReadWritePaths=/var/lib/universal-inbox
+
+[Install]
+WantedBy=multi-user.target
