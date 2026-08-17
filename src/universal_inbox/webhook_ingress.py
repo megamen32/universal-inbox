@@ -62,14 +62,15 @@ def build_webhook_handler(
                     return
                 identity = ItemIdentity(source, message_id)
                 with SQLiteInboxStore(db_path) as request_store:
-                    request_store.ingest(InboxItem(identity, title=sender or source, body=body))
+                    request_store.ingest(InboxItem(identity, title=sender or source, sender=sender, body=body))
                     receipt = sink_factory(request_store)(f"inbox://{source}/{message_id}")
+                outbox_receipt = receipt[0] if isinstance(receipt, tuple) and receipt else receipt
                 self._reply(HTTPStatus.ACCEPTED, {
                     "source": source,
                     "message_id": message_id,
-                    "event_id": getattr(receipt, "event_id", None),
-                    "incident_id": getattr(receipt, "incident_id", None),
-                    "delivery_id": getattr(receipt, "delivery_id", None),
+                    "event_id": getattr(outbox_receipt, "event_id", None),
+                    "incident_id": getattr(outbox_receipt, "incident_id", None),
+                    "delivery_id": getattr(outbox_receipt, "delivery_id", None),
                 })
             except (ValueError, json.JSONDecodeError, ItemConflictError) as error:
                 self._reply(HTTPStatus.BAD_REQUEST, {"error": str(error)})

@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from universal_inbox.noticeplace_sink import NoticePlaceReceipt
+from universal_inbox.contracts import ItemIdentity
 from universal_inbox.store import SQLiteInboxStore
 from universal_inbox.webhook_ingress import build_webhook_handler
 from universal_inbox.webhook_runtime import build_configured_webhook_handler
@@ -23,7 +24,7 @@ def test_webhook_ingress_accepts_all_message_spokes_and_returns_outbox_receipt(t
     class Sink:
         def __call__(self, ref):
             receipts.append(ref)
-            return NoticePlaceReceipt("evt_1", "inc_1", "dlv_1")
+            return (NoticePlaceReceipt("evt_1", "inc_1", "dlv_1"), "conv_1")
 
     db_path = tmp_path / "inbox.sqlite3"
     with SQLiteInboxStore(db_path):
@@ -51,6 +52,7 @@ def test_webhook_ingress_accepts_all_message_spokes_and_returns_outbox_receipt(t
                 assert result["delivery_id"] == "dlv_1"
         with SQLiteInboxStore(db_path) as store:
             assert store.counts()["items"] == 5
+            assert store.get(ItemIdentity("vk", "vk-1")).sender == "operator"
     finally:
         server.shutdown()
         thread.join()

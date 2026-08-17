@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from .noticeplace_sink import NoticePlaceInboxSink, build_routed_noticeplace_sink
+from .noticeplace_runtime import _delivery_sink
 from .webhook_ingress import build_webhook_handler
 
 
@@ -30,15 +30,6 @@ def build_configured_webhook_handler(
         raise RuntimeError("UNIVERSAL_INBOX_NOTICEPLACE_EVENT_URL is required")
     if not outbox_token and not routes_raw:
         raise RuntimeError("UNIVERSAL_INBOX_NOTICEPLACE_TOKEN is required")
-
-    routes = None
-    if routes_raw:
-        try:
-            routes = json.loads(routes_raw)
-        except json.JSONDecodeError as error:
-            raise RuntimeError("UNIVERSAL_INBOX_NOTICEPLACE_ROUTES_JSON must be a JSON object") from error
-        if not isinstance(routes, dict) or not routes:
-            raise RuntimeError("UNIVERSAL_INBOX_NOTICEPLACE_ROUTES_JSON must be a non-empty JSON object")
     ignored_senders = {}
     if ignored_raw:
         try:
@@ -49,25 +40,7 @@ def build_configured_webhook_handler(
             raise RuntimeError("UNIVERSAL_INBOX_WEBHOOK_IGNORED_SENDERS_JSON must map sources to arrays")
 
     def sink_factory(store):
-        if routes is not None:
-            return build_routed_noticeplace_sink(
-                store,
-                event_url,
-                routes=routes,
-                project=environment.get("UNIVERSAL_INBOX_NOTICEPLACE_PROJECT", "universal-inbox"),
-                recipient=environment.get("UNIVERSAL_INBOX_NOTICEPLACE_RECIPIENT", "operator"),
-                severity=environment.get("UNIVERSAL_INBOX_NOTICEPLACE_SEVERITY", "notice"),
-                request_timeout=float(environment.get("UNIVERSAL_INBOX_NOTICEPLACE_TIMEOUT_SECONDS", "8")),
-            )
-        return NoticePlaceInboxSink(
-            store,
-            event_url,
-            outbox_token,
-            project=environment.get("UNIVERSAL_INBOX_NOTICEPLACE_PROJECT", "universal-inbox"),
-            recipient=environment.get("UNIVERSAL_INBOX_NOTICEPLACE_RECIPIENT", "operator"),
-            severity=environment.get("UNIVERSAL_INBOX_NOTICEPLACE_SEVERITY", "notice"),
-            request_timeout=float(environment.get("UNIVERSAL_INBOX_NOTICEPLACE_TIMEOUT_SECONDS", "8")),
-        )
+        return _delivery_sink(store, environment)
 
     return build_webhook_handler(db_path, ingress_token, sink_factory, ignored_senders=ignored_senders)
 
