@@ -150,7 +150,7 @@ class SQLiteInboxStore:
                 "SELECT payload_json FROM items WHERE source = ? AND item_id = ?", (source, item_id)
             ).fetchone()
             if row is not None:
-                if row["payload_json"] != encoded:
+                if row["payload_json"] != encoded and not self._legacy_sender_compatible(row["payload_json"], payload):
                     raise ItemConflictError(f"conflicting item for {source}/{item_id}")
                 if advance_cursor and item.cursor is not None:
                     self._connection.execute(
@@ -454,6 +454,19 @@ class SQLiteInboxStore:
             error_class=row["error_class"],
             retry_after_seconds=row["retry_after_seconds"],
         )
+
+    @staticmethod
+    def _legacy_sender_compatible(existing_encoded: str, current: dict[str, object]) -> bool:
+        """Adding sender metadata must not break durable idempotency for old rows."""
+        try:
+            existing = json.loads(existing_encoded)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(existing, dict) or "sender" in existing or current.get("sender") is None:
+            return False
+        legacy = dict(current)
+        legacy.pop("sender", None)
+        return existing == legacy
 
     @staticmethod
     def _item_payload(item: InboxItem) -> dict[str, object]:

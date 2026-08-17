@@ -99,6 +99,17 @@ def test_webhook_ingress_rejects_unsupported_sources_and_bad_auth(tmp_path) -> N
         server.server_close()
 
 
+def test_sender_metadata_is_backward_compatible_with_existing_canonical_item(tmp_path) -> None:
+    identity = ItemIdentity("telegram", "legacy-1")
+    with SQLiteInboxStore(tmp_path / "inbox.sqlite3") as store:
+        store.ingest(__import__("universal_inbox.contracts", fromlist=["InboxItem"]).InboxItem(identity, title="anna", body="hello"))
+        row = store._connection.execute("SELECT payload_json FROM items WHERE source=? AND item_id=?", ("telegram", "legacy-1")).fetchone()
+        payload = json.loads(row["payload_json"])
+        del payload["sender"]
+        store._connection.execute("UPDATE items SET payload_json=? WHERE source=? AND item_id=?", (json.dumps(payload, sort_keys=True, separators=(",", ":")), "telegram", "legacy-1"))
+        assert store.ingest(__import__("universal_inbox.contracts", fromlist=["InboxItem"]).InboxItem(identity, title="anna", sender="anna", body="hello")) is False
+
+
 def test_webhook_ingress_ignores_operator_owned_sender_ids_before_routing(tmp_path) -> None:
     db_path = tmp_path / "inbox.sqlite3"
     routed = []
