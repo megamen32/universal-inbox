@@ -69,6 +69,25 @@ NOTIFY_MESSAGE_WEBHOOKS_JSON={"whatsapp.message":{"url":"http://127.0.0.1:18110/
 NOTIFY_CALL_WEBHOOKS_JSON={"phone.call":{"url":"http://127.0.0.1:18112/v1/calls","token":"replace-with-bridge-token"},"telegram.call":{"url":"http://127.0.0.1:18113/v1/calls","token":"replace-with-bridge-token"},"whatsapp.call":{"url":"http://127.0.0.1:18110/v1/calls","token":"replace-with-bridge-token"}}
 ```
 
+## Universal UserIO fan-out
+
+When `UNIVERSAL_USERIO_INGRESS_URL` is configured, the same durable canonical
+item is also POSTed to UserIO's `/v1/messages` endpoint. The source cursor
+advances only after both NoticePlace and UserIO accept the item; each service
+deduplicates using the stable Inbox identity. `UNIVERSAL_USERIO_ROUTES_JSON`
+maps the source to a UserIO `route_id`; it contains no provider URL or
+credential. The UserIO ingress token is scoped only to message ingestion.
+
+```text
+UNIVERSAL_USERIO_INGRESS_URL=http://127.0.0.1:18093
+UNIVERSAL_USERIO_INGRESS_TOKEN=replace-with-userio-ingress-token
+UNIVERSAL_USERIO_ROUTES_JSON={"telegram":"telegram-reply","matrix":"matrix-reply","whatsapp":"whatsapp-reply","vk":"vk-reply","phone":"phone-reply"}
+```
+
+UserIO owns the conversation, AI draft and approval decision. Its later
+`userio.reply.v1` intent enters NoticePlace through a scoped producer route;
+Universal Inbox is never asked to make an AI or delivery decision.
+
 ## Loop and retry safety
 
 - Telegram ignores the configured own user plus
