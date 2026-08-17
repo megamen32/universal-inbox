@@ -26,6 +26,7 @@ from .adapters._read_only import ReadOnlyPage
 from .noticeplace_sink import NoticePlaceInboxSink, build_routed_noticeplace_sink
 from .secretary_watch import SecretaryWatch
 from .store import SQLiteInboxStore
+from .userio_sink import FanoutSink, UserIOInboxSink
 
 
 def _noticeplace_sink(store, environment: Mapping[str, str], *, runner: Any = None):
@@ -66,6 +67,26 @@ def _noticeplace_sink(store, environment: Mapping[str, str], *, runner: Any = No
     )
 
 
+def _delivery_sink(store, environment: Mapping[str, str], *, runner: Any = None):
+    """Keep Inbox technical: it fans out canonical events, never AI decisions."""
+    outbox = _noticeplace_sink(store, environment, runner=runner)
+    ingress_url = environment.get("UNIVERSAL_USERIO_INGRESS_URL", "").strip()
+    if not ingress_url:
+        return outbox
+    token = environment.get("UNIVERSAL_USERIO_INGRESS_TOKEN", "").strip()
+    routes_raw = environment.get("UNIVERSAL_USERIO_ROUTES_JSON", "").strip()
+    if not token or not routes_raw:
+        raise RuntimeError("UNIVERSAL_USERIO_INGRESS_TOKEN and UNIVERSAL_USERIO_ROUTES_JSON are required")
+    try:
+        routes = json.loads(routes_raw)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("UNIVERSAL_USERIO_ROUTES_JSON must be a JSON object") from error
+    if not isinstance(routes, dict) or not routes:
+        raise RuntimeError("UNIVERSAL_USERIO_ROUTES_JSON must be a non-empty JSON object")
+    kwargs = {"runner": runner} if runner is not None else {}
+    return FanoutSink(outbox, UserIOInboxSink(store, ingress_url, token, route_for_source=routes, **kwargs))
+
+
 def build_noticeplace_telegram_watch(
     store: SQLiteInboxStore,
     *,
@@ -76,7 +97,7 @@ def build_noticeplace_telegram_watch(
 ) -> SecretaryWatch:
     """Compose the existing durable Inbox watcher with route-neutral Outbox intake."""
     environment = environment or os.environ
-    sink = _noticeplace_sink(store, environment, runner=http_runner)
+    sink = _delivery_sink(store, environment, runner=http_runner)
     dm_id = environment.get("UNIVERSAL_INBOX_TELEGRAM_DM_CHAT_ID", "").strip()
     group_id = normalize_group_chat_id(environment.get("UNIVERSAL_INBOX_TELEGRAM_GROUP_CHAT_ID", ""))
     if not dm_id or not group_id or dm_id == group_id:
@@ -153,7 +174,7 @@ def build_noticeplace_matrix_watch(
 ) -> SecretaryWatch:
     """Compose allowlisted Matrix `/sync` ingress with the same Outbox sink."""
     environment = environment or os.environ
-    sink = _noticeplace_sink(store, environment, runner=http_runner)
+    sink = _delivery_sink(store, environment, runner=http_runner)
     homeserver = environment.get("UNIVERSAL_INBOX_MATRIX_HOMESERVER", "").strip()
     matrix_token = environment.get("UNIVERSAL_INBOX_MATRIX_ACCESS_TOKEN", "").strip()
     own_user_id = environment.get("UNIVERSAL_INBOX_MATRIX_USER_ID", "").strip()

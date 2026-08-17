@@ -403,10 +403,12 @@ class SQLiteInboxStore:
         identity = ItemIdentity(source=row["source"], item_id=row["item_id"])
         refs = tuple(ItemRef(identity=identity, label=entry["label"]) for entry in json.loads(row["refs_json"]))
         cursor = InboxCursor(row["cursor_value"], source=identity.source) if row["cursor_value"] else None
+        payload = json.loads(row["payload_json"])
         return InboxItem(
             identity=identity,
             title=row["title"],
             body=row["body"],
+            sender=payload.get("sender"),
             refs=refs,
             cursor=cursor,
             content_state=ContentState(row["content_state"]),
@@ -460,6 +462,7 @@ class SQLiteInboxStore:
             "item_id": item.identity.item_id,
             "title": item.title,
             "body": item.body,
+            "sender": item.sender,
             "content_state": item.content_state.value,
             "refs": [{"label": ref.label} for ref in item.refs],
         }

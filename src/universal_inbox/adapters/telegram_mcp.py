@@ -23,6 +23,7 @@ def _telegram_item_mapper(record: TelegramMcpPreview, source: str) -> InboxItem:
         identity=identity,
         title=record.sender or record.chat_id,
         body=record.text,
+        sender=record.sender or record.chat_id,
         cursor=InboxCursor(record.cursor, source=source) if record.cursor is not None else None,
     )
 

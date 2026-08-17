@@ -65,6 +65,7 @@ class InboxItem:
     content_state: ContentState = ContentState.PRESENT
     title: str | None = None
     body: str | None = None
+    sender: str | None = None
     cursor: InboxCursor | None = None
 
     def __post_init__(self) -> None:
@@ -73,6 +74,8 @@ class InboxItem:
             object.__setattr__(self, "title", _normalize_text(self.title, "title"))
         if self.body is not None:
             object.__setattr__(self, "body", self.body.strip())
+        if self.sender is not None:
+            object.__setattr__(self, "sender", _normalize_text(self.sender, "sender"))
         if self.cursor is not None and not isinstance(self.cursor, InboxCursor):
             raise TypeError("cursor must be an InboxCursor or None")
         for ref in self.refs:

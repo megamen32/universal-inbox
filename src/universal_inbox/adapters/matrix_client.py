@@ -27,6 +27,7 @@ def _matrix_item_mapper(record: MatrixPreview, source: str) -> InboxItem:
         identity=ItemIdentity(source, f"{record.room_id}:{record.event_id}"),
         title=record.sender,
         body=record.body,
+        sender=record.sender,
         cursor=InboxCursor(record.cursor, source=source),
     )
 
