@@ -1,0 +1,19 @@
+[Unit]
+Description=Universal Inbox direct Gmail to UserIO reader
+After=network-online.target universal-userio.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/universal-inbox
+EnvironmentFile=/etc/universal-userio.env
+Environment=UNIVERSAL_INBOX_DB_PATH=/var/lib/universal-inbox/gmail.sqlite3
+Environment=UNIVERSAL_USERIO_INGRESS_URL=http://127.0.0.1:18093
+Environment=UNIVERSAL_INBOX_GMAIL_ACCOUNTS=gmail,careviolan
+ExecStart=/usr/bin/python3 -m universal_inbox.gmail_userio_runtime
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
