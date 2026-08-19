@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from html.parser import HTMLParser
 import json
 import subprocess
 from typing import Protocol
@@ -23,20 +22,6 @@ class GmailPreview:
     cursor: str | None = None
     sender: str | None = None
     received_at: str | None = None
-
-
-class _HtmlTextExtractor(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self._chunks: list[str] = []
-
-    def handle_data(self, data: str) -> None:
-        if data.strip():
-            self._chunks.append(data.strip())
-
-    @property
-    def text(self) -> str:
-        return "\n".join(self._chunks)
 
 
 def _gmail_item_mapper(record: GmailPreview, source: str) -> InboxItem:
@@ -221,19 +206,15 @@ class GmailHimalayaReader:
         parts = message.get("parts")
         if not isinstance(parts, list):
             raise TransientAdapterError("Himalaya message parts are malformed")
-        text = GmailHimalayaReader._body_parts(parts, message.get("text_body"))
-        if text:
-            return text
         html = GmailHimalayaReader._body_parts(parts, message.get("html_body"))
-        if not html:
-            return None
-        extractor = _HtmlTextExtractor()
-        extractor.feed(html)
-        extractor.close()
-        return extractor.text or None
+        if html:
+            return html
+        return GmailHimalayaReader._body_parts(parts, message.get("text_body"))
 
     @staticmethod
     def _body_parts(parts: list[object], indexes: object) -> str | None:
+        if indexes is None:
+            return None
         if not isinstance(indexes, list):
             raise TransientAdapterError("Himalaya message body index is malformed")
         bodies: list[str] = []

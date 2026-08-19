@@ -113,10 +113,10 @@ def test_gmail_himalaya_reader_maps_envelopes_and_resumes_after_cursor() -> None
     assert ("himalaya", "-a", "gmail", "--backend", "imap", "--json", "message", "read", "-m", "Inbox", "43296") in calls
 
 
-def test_gmail_himalaya_reader_uses_html_as_safe_text_fallback() -> None:
+def test_gmail_himalaya_reader_preserves_html_body_for_sandboxed_display() -> None:
     assert GmailHimalayaReader._plain_text_body(
         {"text_body": [], "html_body": [0], "parts": [{"body": "<p>Hello <b>world</b></p>"}]}
-    ) == "Hello\nworld"
+    ) == "<p>Hello <b>world</b></p>"
 
 
 def test_default_registry_registers_both_allowlisted_gmail_accounts() -> None:
