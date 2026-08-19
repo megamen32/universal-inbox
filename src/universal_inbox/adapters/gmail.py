@@ -74,26 +74,28 @@ class SubprocessGmailCommandRunner:
         timeout_seconds: float,
         max_stdout_bytes: int,
     ) -> str:
-        try:
-            completed = subprocess.run(
-                argv,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                check=False,
-                shell=False,
-                timeout=timeout_seconds,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise TransientAdapterError("Himalaya command did not complete") from exc
-        if completed.returncode != 0:
-            raise TransientAdapterError("Himalaya command failed")
-        if len(completed.stdout) > max_stdout_bytes:
-            raise TransientAdapterError("Himalaya response exceeded the configured limit")
-        try:
-            return completed.stdout.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise TransientAdapterError("Himalaya response was not UTF-8") from exc
+        for _attempt in range(3):
+            try:
+                completed = subprocess.run(
+                    argv,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                    shell=False,
+                    timeout=timeout_seconds,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if completed.returncode != 0:
+                continue
+            if len(completed.stdout) > max_stdout_bytes:
+                raise TransientAdapterError("Himalaya response exceeded the configured limit")
+            try:
+                return completed.stdout.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise TransientAdapterError("Himalaya response was not UTF-8") from exc
+        raise TransientAdapterError("Himalaya command did not complete")
 
 
 class GmailHimalayaReader:
@@ -125,7 +127,7 @@ class GmailHimalayaReader:
     def __call__(self, cursor: InboxCursor | None, limit: int) -> ReadOnlyPage[GmailPreview]:
         if limit < 1:
             raise ValueError("limit must be positive")
-        if cursor is not None and cursor.source not in {None, "gmail", f"gmail:{self._account}"}:
+        if cursor is not None and cursor.source is not None and not cursor.source.startswith("gmail"):
             raise ValueError("Gmail cursor source mismatch")
         output = self._runner.run(
             (
