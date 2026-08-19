@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from html.parser import HTMLParser
 import json
@@ -170,7 +171,12 @@ class GmailHimalayaReader:
             raise TransientAdapterError("Gmail cursor is outside the bounded envelope snapshot")
 
         chronological = list(reversed(newest_first))
-        selected = [self._with_body(preview) for preview in chronological[:limit]]
+        selected_headers = chronological[:limit]
+        if selected_headers:
+            with ThreadPoolExecutor(max_workers=min(4, len(selected_headers))) as executor:
+                selected = list(executor.map(self._with_body, selected_headers))
+        else:
+            selected = []
         next_cursor = selected[-1].message_id if selected else (cursor.value if cursor else None)
         return ReadOnlyPage(items=tuple(selected), next_cursor=next_cursor)
 
