@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html.parser import HTMLParser
 import json
 import subprocess
 from typing import Protocol
@@ -15,11 +16,26 @@ from ._read_only import ReadOnlyInboxAdapter, ReadOnlyPage
 @dataclass(frozen=True, slots=True)
 class GmailPreview:
     message_id: str
+    fetch_id: str | None = None
     subject: str | None = None
     snippet: str | None = None
     cursor: str | None = None
     sender: str | None = None
     received_at: str | None = None
+
+
+class _HtmlTextExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._chunks: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        if data.strip():
+            self._chunks.append(data.strip())
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self._chunks)
 
 
 def _gmail_item_mapper(record: GmailPreview, source: str) -> InboxItem:
@@ -28,6 +44,7 @@ def _gmail_item_mapper(record: GmailPreview, source: str) -> InboxItem:
         identity=identity,
         title=record.subject,
         body=record.snippet or _preview_body(record),
+        sender=record.sender,
         cursor=InboxCursor(record.cursor, source=source) if record.cursor is not None else None,
     )
 
@@ -108,7 +125,7 @@ class GmailHimalayaReader:
     def __call__(self, cursor: InboxCursor | None, limit: int) -> ReadOnlyPage[GmailPreview]:
         if limit < 1:
             raise ValueError("limit must be positive")
-        if cursor is not None and cursor.source not in {None, "gmail"}:
+        if cursor is not None and cursor.source not in {None, "gmail", f"gmail:{self._account}"}:
             raise ValueError("Gmail cursor source mismatch")
         output = self._runner.run(
             (
@@ -151,18 +168,89 @@ class GmailHimalayaReader:
             raise TransientAdapterError("Gmail cursor is outside the bounded envelope snapshot")
 
         chronological = list(reversed(newest_first))
-        selected = chronological[:limit]
+        selected = [self._with_body(preview) for preview in chronological[:limit]]
         next_cursor = selected[-1].message_id if selected else (cursor.value if cursor else None)
         return ReadOnlyPage(items=tuple(selected), next_cursor=next_cursor)
+
+    def _with_body(self, preview: GmailPreview) -> GmailPreview:
+        if preview.fetch_id is None:
+            raise TransientAdapterError("Gmail envelope has no fetch identity")
+        output = self._runner.run(
+            (
+                self._binary,
+                "-a",
+                self._account,
+                "--json",
+                "message",
+                "read",
+                "-m",
+                self._mailbox,
+                preview.fetch_id,
+            ),
+            timeout_seconds=self._timeout_seconds,
+            max_stdout_bytes=self._max_stdout_bytes,
+        )
+        try:
+            body = self._plain_text_body(json.loads(output))
+        except json.JSONDecodeError as exc:
+            raise TransientAdapterError("Himalaya returned invalid message JSON") from exc
+        return GmailPreview(
+            message_id=preview.message_id,
+            fetch_id=preview.fetch_id,
+            subject=preview.subject,
+            snippet=body,
+            cursor=preview.cursor,
+            sender=preview.sender,
+            received_at=preview.received_at,
+        )
+
+    @staticmethod
+    def _plain_text_body(message: object) -> str | None:
+        if not isinstance(message, dict):
+            raise TransientAdapterError("Himalaya message must be an object")
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            raise TransientAdapterError("Himalaya message parts are malformed")
+        text = GmailHimalayaReader._body_parts(parts, message.get("text_body"))
+        if text:
+            return text
+        html = GmailHimalayaReader._body_parts(parts, message.get("html_body"))
+        if not html:
+            return None
+        extractor = _HtmlTextExtractor()
+        extractor.feed(html)
+        extractor.close()
+        return extractor.text or None
+
+    @staticmethod
+    def _body_parts(parts: list[object], indexes: object) -> str | None:
+        if not isinstance(indexes, list):
+            raise TransientAdapterError("Himalaya message body index is malformed")
+        bodies: list[str] = []
+        for index in indexes:
+            if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(parts):
+                raise TransientAdapterError("Himalaya text body index is malformed")
+            part = parts[index]
+            if not isinstance(part, dict):
+                raise TransientAdapterError("Himalaya message part is malformed")
+            body = part.get("body")
+            if not isinstance(body, str):
+                raise TransientAdapterError("Himalaya text body is malformed")
+            if body.strip():
+                bodies.append(body.strip())
+        return "\n\n".join(bodies) or None
 
     @staticmethod
     def _preview(envelope: dict[str, object]) -> GmailPreview:
         message_id = envelope.get("message-id") or envelope.get("id")
+        fetch_id = envelope.get("id")
         subject = envelope.get("subject")
         date = envelope.get("date")
         senders = envelope.get("from") or []
         if not isinstance(message_id, str) or not message_id.strip():
             raise TransientAdapterError("Gmail envelope has no stable identity")
+        if not isinstance(fetch_id, str) or not fetch_id.strip():
+            raise TransientAdapterError("Gmail envelope has no fetch identity")
         if subject is not None and not isinstance(subject, str):
             raise TransientAdapterError("Gmail subject is malformed")
         if date is not None and not isinstance(date, str):
@@ -176,6 +264,7 @@ class GmailHimalayaReader:
                     sender = f"{name} <{email}>" if isinstance(name, str) and name else email
         return GmailPreview(
             message_id=message_id.strip(),
+            fetch_id=fetch_id.strip(),
             subject=subject.strip() if isinstance(subject, str) and subject.strip() else None,
             cursor=message_id.strip(),
             sender=sender,

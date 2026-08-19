@@ -23,7 +23,7 @@ def test_gmail_adapter_maps_injected_reader_to_canonical_poll_batch_and_status()
         calls.append((cursor, limit))
         return ReadOnlyPage(
             items=(
-                GmailPreview(message_id="gm-1", subject="Inbox orchid", snippet="first preview", cursor="gmail-c-1"),
+                GmailPreview(message_id="gm-1", subject="Inbox orchid", snippet="first preview", sender="orchid@example.invalid", cursor="gmail-c-1"),
                 GmailPreview(message_id="gm-2", subject="Inbox lily", snippet="second preview", cursor="gmail-c-1"),
             ),
             next_cursor="gmail-c-2",
@@ -47,6 +47,7 @@ def test_gmail_adapter_maps_injected_reader_to_canonical_poll_batch_and_status()
     ]
     assert batch.items[0].title == "Inbox orchid"
     assert batch.items[0].body == "first preview"
+    assert batch.items[0].sender == "orchid@example.invalid"
     assert batch.items[0].cursor == InboxCursor("gmail-c-1", source="gmail")
 
     status = adapter.status()
@@ -84,10 +85,16 @@ def test_gmail_himalaya_reader_maps_envelopes_and_resumes_after_cursor() -> None
     }
     calls: list[tuple[str, ...]] = []
 
+    message_payloads = {
+        "43296": {"text_body": [0], "parts": [{"body": "Older body"}]},
+        "43297": {"text_body": [0], "parts": [{"body": "Newest body"}]},
+    }
+
     class Runner:
         def run(self, argv: tuple[str, ...], *, timeout_seconds: float, max_stdout_bytes: int) -> str:
             calls.append(argv)
-            return __import__("json").dumps(payload)
+            response = payload if argv[4:6] == ("envelope", "list") else message_payloads[argv[-1]]
+            return __import__("json").dumps(response)
 
     reader = GmailHimalayaReader(Runner(), account="gmail", mailbox="Inbox")
 
@@ -95,12 +102,21 @@ def test_gmail_himalaya_reader_maps_envelopes_and_resumes_after_cursor() -> None
     assert [item.message_id for item in first.items] == ["old@example.invalid", "new@example.invalid"]
     assert first.next_cursor == "new@example.invalid"
     assert first.items[0].subject == "Older"
+    assert first.items[0].snippet == "Older body"
     assert first.items[1].sender == "Sender <sender@example.invalid>"
+    assert first.items[1].snippet == "Newest body"
 
     resumed = reader(InboxCursor("old@example.invalid", source="gmail"), 10)
     assert [item.message_id for item in resumed.items] == ["new@example.invalid"]
     assert resumed.next_cursor == "new@example.invalid"
     assert calls[0][:6] == ("himalaya", "-a", "gmail", "--json", "envelope", "list")
+    assert ("himalaya", "-a", "gmail", "--json", "message", "read", "-m", "Inbox", "43296") in calls
+
+
+def test_gmail_himalaya_reader_uses_html_as_safe_text_fallback() -> None:
+    assert GmailHimalayaReader._plain_text_body(
+        {"text_body": [], "html_body": [0], "parts": [{"body": "<p>Hello <b>world</b></p>"}]}
+    ) == "Hello\nworld"
 
 
 def test_default_registry_registers_both_allowlisted_gmail_accounts() -> None:
