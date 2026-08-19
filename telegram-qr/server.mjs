@@ -6,6 +6,7 @@ import { StringSession } from "telegram/sessions/index.js";
 import QRCode from "qrcode";
 
 const port = Number(process.env.PORT || 18095);
+const publicPrefix = (process.env.PUBLIC_PREFIX || "").replace(/\/$/, "");
 const stateDir = "/var/lib/universal-inbox/telegram-qr";
 const keyPath = "/var/lib/universal-inbox/secret-agent/telegram-qr.agekey";
 const sessionsDir = `${stateDir}/sessions`;
@@ -124,12 +125,12 @@ http.createServer((req, res) => {
     const created = `account-${nextSlot++}`;
     slots.set(created, { status: "idle" });
     void start(created);
-    res.writeHead(302, { Location: `/?slot=${created}` });
+    res.writeHead(302, { Location: `${publicPrefix}/?slot=${created}` });
     return res.end();
   }
   if (url.pathname === "/start" && slots.has(slot)) {
     void start(slot);
-    res.writeHead(302, { Location: `/?slot=${slot}` });
+    res.writeHead(302, { Location: `${publicPrefix}/?slot=${slot}` });
     return res.end();
   }
   const cards = [...slots.entries()].map(([id, item]) => {

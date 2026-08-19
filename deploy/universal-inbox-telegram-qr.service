@@ -8,6 +8,7 @@ Type=simple
 User=roomhacker
 WorkingDirectory=/opt/universal-inbox-telegram-qr
 Environment=PORT=18095
+Environment=PUBLIC_PREFIX=/telegram-qr
 Environment=UNIVERSAL_USERIO_URL=http://127.0.0.1:18093
 EnvironmentFile=/etc/universal-userio.env
 ExecStart=/usr/bin/node /opt/universal-inbox-telegram-qr/server.mjs
