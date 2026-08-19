@@ -110,7 +110,7 @@ def test_gmail_himalaya_reader_maps_envelopes_and_resumes_after_cursor() -> None
     assert [item.message_id for item in resumed.items] == ["new@example.invalid"]
     assert resumed.next_cursor == "new@example.invalid"
     assert calls[0][:6] == ("himalaya", "-a", "gmail", "--json", "envelope", "list")
-    assert ("himalaya", "-a", "gmail", "--json", "message", "read", "-m", "Inbox", "43296") in calls
+    assert ("himalaya", "-a", "gmail", "--backend", "imap", "--json", "message", "read", "-m", "Inbox", "43296") in calls
 
 
 def test_gmail_himalaya_reader_uses_html_as_safe_text_fallback() -> None:

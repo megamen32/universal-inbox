@@ -182,6 +182,8 @@ class GmailHimalayaReader:
                 self._binary,
                 "-a",
                 self._account,
+                "--backend",
+                "imap",
                 "--json",
                 "message",
                 "read",
