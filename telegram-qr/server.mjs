@@ -134,7 +134,7 @@ http.createServer((req, res) => {
     return res.end();
   }
   const cards = [...slots.entries()].map(([id, item]) => {
-    const refreshing = item.status === "connecting" || (item.status === "waiting" && !item.qr);
+    const refreshing = item.status === "connecting" || item.status === "waiting";
     return `<div class=card><b>${escape(id)}</b><p>${escape(item.status)}${item.name ? `: ${escape(item.name)}` : ""}</p>${item.qr ? `<img class=qr src="${item.qr}" alt="Telegram login QR"><p>Telegram → Settings → Devices → Link Desktop Device</p>` : ""}${item.status === "error" ? `<a href="/start?slot=${encodeURIComponent(id)}"><button>Try again</button></a>` : ""}${refreshing ? "<script>setTimeout(()=>location.reload(),1000)</script>" : ""}</div>`;
   }).join("");
   res.setHeader("content-type", "text/html; charset=utf-8");
