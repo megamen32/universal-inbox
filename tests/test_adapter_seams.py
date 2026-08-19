@@ -86,7 +86,7 @@ def test_gmail_himalaya_reader_maps_envelopes_and_resumes_after_cursor() -> None
     calls: list[tuple[str, ...]] = []
 
     message_payloads = {
-        "43296": {"text_body": [0], "parts": [{"body": "Older body"}]},
+        "43296": {"text_body": [0], "parts": [{"body": {"Text": "Older body"}}]},
         "43297": {"text_body": [0], "parts": [{"body": "Newest body"}]},
     }
 

@@ -238,6 +238,8 @@ class GmailHimalayaReader:
             if not isinstance(part, dict):
                 raise TransientAdapterError("Himalaya message part is malformed")
             body = part.get("body")
+            if isinstance(body, dict):
+                body = body.get("Text") or body.get("Html")
             if not isinstance(body, str):
                 raise TransientAdapterError("Himalaya text body is malformed")
             if body.strip():
