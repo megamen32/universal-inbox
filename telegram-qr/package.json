@@ -1,0 +1,9 @@
+{
+  "name": "universal-inbox-telegram-qr",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "telegram": "2.26.22"
+  }
+}
