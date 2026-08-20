@@ -1,0 +1,9 @@
+{
+  "name": "universal-inbox-whatsapp-qr",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@whiskeysockets/baileys": "6.7.18",
+    "qrcode": "^1.5.4"
+  }
+}
