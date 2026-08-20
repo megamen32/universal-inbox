@@ -76,6 +76,14 @@ async function start(slot) {
     if (!["notify", "append"].includes(type)) return;
     for (const message of messages) { try { await ingest(slot, message); } catch (error) { console.error("WhatsApp ingest failed", error.message); } }
   });
+  socket.ev.on("messaging-history.set", async ({ messages }) => {
+    for (const message of messages || []) { try { await ingest(slot, message); } catch (error) { console.error("WhatsApp history ingest failed", error.message); } }
+  });
+  socket.ev.on("chats.upsert", async (chats) => {
+    for (const chat of chats || []) {
+      if (chat.lastMessage) { try { await ingest(slot, chat.lastMessage); } catch (error) { console.error("WhatsApp chat ingest failed", error.message); } }
+    }
+  });
 }
 
 function restore(slot) { if (!/^account-\d+$/.test(slot)) return false; if (!slots.has(slot)) slots.set(slot, { status: "idle" }); void start(slot); return true; }
