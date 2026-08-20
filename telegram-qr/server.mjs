@@ -118,6 +118,17 @@ async function start(slot) {
   }
 }
 
+function restoreSlot(slot) {
+  const match = /^account-(\d+)$/.exec(slot || "");
+  if (!match) return false;
+  nextSlot = Math.max(nextSlot, Number(match[1]) + 1);
+  if (!slots.has(slot)) {
+    slots.set(slot, { status: "idle" });
+    void start(slot);
+  }
+  return true;
+}
+
 http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const slot = url.searchParams.get("slot");
@@ -133,6 +144,7 @@ http.createServer((req, res) => {
     res.writeHead(302, { Location: `${publicPrefix}/?slot=${slot}` });
     return res.end();
   }
+  if (url.pathname === "/" && slot) restoreSlot(slot);
   const cards = [...slots.entries()].map(([id, item]) => {
     const refreshing = item.status === "connecting" || item.status === "waiting";
     return `<div class=card><b>${escape(id)}</b><p>${escape(item.status)}${item.name ? `: ${escape(item.name)}` : ""}</p>${item.qr ? `<img class=qr src="${item.qr}" alt="Telegram login QR"><p>Telegram → Settings → Devices → Link Desktop Device</p>` : ""}${item.status === "error" ? `<a href="/start?slot=${encodeURIComponent(id)}"><button>Try again</button></a>` : ""}${refreshing ? "<script>setTimeout(()=>location.reload(),1000)</script>" : ""}</div>`;
