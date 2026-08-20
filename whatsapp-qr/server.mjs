@@ -1,7 +1,7 @@
 import http from "node:http";
 import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState } from "@whiskeysockets/baileys";
+import makeWASocket, { Browsers, DisconnectReason, fetchLatestBaileysVersion, useMultiFileAuthState } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
 
 const port = Number(process.env.PORT || 18096);
@@ -49,7 +49,8 @@ async function start(slot) {
   if (!current || ["connecting", "waiting", "connected"].includes(current.status)) return;
   slots.set(slot, { status: "connecting" });
   const auth = await useMultiFileAuthState(join(sessionsDir, slot));
-  const socket = makeWASocket({ auth: auth.state, browser: Browsers.ubuntu("Universal UserIO"), printQRInTerminal: false, syncFullHistory: true });
+  const { version } = await fetchLatestBaileysVersion();
+  const socket = makeWASocket({ version, auth: auth.state, browser: Browsers.ubuntu("Universal UserIO"), printQRInTerminal: false, syncFullHistory: true });
   slots.set(slot, { status: "waiting", socket });
   socket.ev.on("creds.update", auth.saveCreds);
   socket.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
