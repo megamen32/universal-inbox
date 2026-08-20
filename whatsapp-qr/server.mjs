@@ -39,7 +39,7 @@ async function registerAccount(slot, jid) {
 async function ingest(slot, message) {
   const key = message.key || {};
   const sender = key.remoteJid || "whatsapp";
-  const body = message.message?.conversation || message.message?.extendedTextMessage?.text || message.message?.imageMessage?.caption || message.message?.videoMessage?.caption || "[WhatsApp message]";
+  const body = message.message?.conversation || message.message?.extendedTextMessage?.text || message.message?.imageMessage?.caption || message.message?.videoMessage?.caption || (message.message?.imageMessage ? "[WhatsApp image]" : message.message?.videoMessage ? "[WhatsApp video]" : "");
   if (!body || key.fromMe) return;
   await postUserIo("/v1/messages", { route_id: "whatsapp-reply", message: { schema: "universal.inbox.message.v1", source: "whatsapp", message_id: `${slot}:${key.id || Date.now()}`, sender, body } });
 }
@@ -73,7 +73,7 @@ async function start(slot) {
     }
   });
   socket.ev.on("messages.upsert", async ({ messages, type }) => {
-    if (type !== "notify") return;
+    if (!["notify", "append"].includes(type)) return;
     for (const message of messages) { try { await ingest(slot, message); } catch (error) { console.error("WhatsApp ingest failed", error.message); } }
   });
 }
