@@ -12,7 +12,7 @@ Environment=PYTHONPATH=/opt/universal-inbox/src
 Environment=UNIVERSAL_INBOX_DB_PATH=/var/lib/universal-inbox/gmail.sqlite3
 Environment=UNIVERSAL_USERIO_INGRESS_URL=http://127.0.0.1:18093
 Environment=UNIVERSAL_INBOX_HIMALAYA_BIN=/home/roomhacker/.cargo/bin/himalaya
-Environment=UNIVERSAL_INBOX_GMAIL_ACCOUNTS=gmail,careviolan
+Environment=UNIVERSAL_INBOX_GMAIL_ACCOUNTS_FILE=/var/lib/universal-inbox/gmail-accounts.txt
 StateDirectory=universal-inbox
 ExecStart=/usr/bin/python3 -m universal_inbox.gmail_userio_runtime
 Restart=on-failure

@@ -5,6 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import json
+import re
 import subprocess
 from typing import Protocol
 
@@ -98,7 +99,7 @@ class GmailHimalayaReader:
         timeout_seconds: float = 20.0,
         max_stdout_bytes: int = 2_000_000,
     ) -> None:
-        if not binary.strip() or account not in {"gmail", "careviolan"} or mailbox not in {"Inbox", "[Gmail]/Спам"}:
+        if not binary.strip() or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", account) or mailbox not in {"Inbox", "[Gmail]/Спам"}:
             raise ValueError("Gmail command, account, and mailbox must be allowlisted")
         if snapshot_size < 1 or timeout_seconds <= 0 or max_stdout_bytes < 1:
             raise ValueError("Gmail reader bounds must be positive")

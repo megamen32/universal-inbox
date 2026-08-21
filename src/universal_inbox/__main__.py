@@ -107,16 +107,23 @@ def _default_registry() -> AdapterRegistry:
     if not binary or shutil.which(binary) is None:
         return AdapterRegistry()
     mailbox = os.getenv("UNIVERSAL_INBOX_GMAIL_MAILBOX", "Inbox").strip()
+    configured = os.getenv("UNIVERSAL_INBOX_GMAIL_ACCOUNTS_FILE", "").strip()
+    account_text = os.getenv("UNIVERSAL_INBOX_GMAIL_ACCOUNTS", "gmail,careviolan")
+    if configured:
+        try:
+            account_text = open(configured, encoding="utf-8").read()
+        except OSError:
+            pass
     accounts = tuple(
         account.strip()
-        for account in os.getenv("UNIVERSAL_INBOX_GMAIL_ACCOUNTS", "gmail,careviolan").split(",")
+        for account in account_text.replace("\n", ",").split(",")
         if account.strip()
     )
     if mailbox not in {"Inbox", "[Gmail]/Спам"}:
         return AdapterRegistry()
     adapters = []
     for account in dict.fromkeys(accounts):
-        if account not in {"gmail", "careviolan"}:
+        if not account.replace("_", "").replace("-", "").isalnum():
             continue
         adapters.append(
             GmailReadAdapter(
