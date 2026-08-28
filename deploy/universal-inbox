@@ -34,6 +34,11 @@ if [[ ! -d "$release" ]]; then
     git -C "$SOURCE_ROOT" archive --format=tar "$revision" | tar -x -C "$release"
 fi
 install -d -o notification-center -g notification-center -m 0750 "$STATE_ROOT"
+setfacl -m u:roomhacker:rwx "$STATE_ROOT"
+for state_file in "$STATE_ROOT"/inbox.sqlite3*; do
+    [[ -e "$state_file" ]] || continue
+    chown notification-center:notification-center "$state_file"
+done
 install -D -m 0644 "$release/deploy/universal-inbox-webhook.service" /etc/systemd/system/universal-inbox-webhook.service
 install -D -m 0644 "$release/deploy/universal-inbox-matrix.service" /etc/systemd/system/universal-inbox-matrix.service
 if [[ ! -e "$CONFIG" ]]; then

@@ -29,3 +29,9 @@ Automated evidence:
 - Neither QR package declares an npm test script; no nonexistent package test is claimed.
 
 Activation boundary: the secretary remains deliberately opt-in. The previous selected boundary deferred Telegram/Overpod activation and live Telegram reads/writes; the committed source can be included in the immutable `/opt/universal-inbox` release without starting an unconfigured second Telegram reader.
+
+Live canary blocker after the first deploy:
+
+- The canonical deploy recreated `/var/lib/universal-inbox` as `notification-center:notification-center 0750`, removing traversal for the `roomhacker` Gmail and QR services. The new `account-2` route worked but the QR runtime logged `secure Telegram credential is unavailable`.
+- Root cause proof: as `roomhacker`, all three existing age credential files and the Gmail database were unreadable through the parent directory; as `notification-center`, the core `inbox.sqlite3` was not writable because it was owned by `roomhacker`.
+- Deployment-contract fix: reapply a scoped `roomhacker:rwx` ACL to the shared state root on every deploy and restore `notification-center` ownership only for the core `inbox.sqlite3*` files.
