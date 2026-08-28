@@ -147,8 +147,8 @@ http.createServer((req, res) => {
   if (url.pathname === "/" && slot) restoreSlot(slot);
   const cards = [...slots.entries()].map(([id, item]) => {
     const refreshing = item.status === "connecting" || item.status === "waiting";
-    return `<div class=card><b>${escape(id)}</b><p>${escape(item.status)}${item.name ? `: ${escape(item.name)}` : ""}</p>${item.qr ? `<img class=qr src="${item.qr}" alt="Telegram login QR"><p>Telegram → Settings → Devices → Link Desktop Device</p>` : ""}${item.status === "error" ? `<a href="/start?slot=${encodeURIComponent(id)}"><button>Try again</button></a>` : ""}${refreshing ? "<script>setTimeout(()=>location.reload(),1000)</script>" : ""}</div>`;
+    return `<div class=card><b>${escape(id)}</b><p>${escape(item.status)}${item.name ? `: ${escape(item.name)}` : ""}</p>${item.qr ? `<img class=qr src="${item.qr}" alt="Telegram login QR"><p>Telegram → Settings → Devices → Link Desktop Device</p>` : ""}${item.status === "error" ? `<a href="${publicPrefix}/start?slot=${encodeURIComponent(id)}"><button>Try again</button></a>` : ""}${refreshing ? "<script>setTimeout(()=>location.reload(),1000)</script>" : ""}</div>`;
   }).join("");
   res.setHeader("content-type", "text/html; charset=utf-8");
-  res.end(page(`<a href="/new"><button>+ Telegram account</button></a>${cards}`));
+  res.end(page(`<a href="${publicPrefix}/new"><button>+ Telegram account</button></a>${cards}`));
 }).listen(port, "127.0.0.1");
