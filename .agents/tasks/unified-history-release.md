@@ -3,7 +3,7 @@
 Started at 2026-08-28T17:32:24+03:00 (manual clock)
 Estimate: 30-90 active minutes; active time is not continuously measured.
 
-Status: complete review and automated release proof; integration commit pending
+Status: complete; clean unified history pushed, deployed, and browser-tested
 
 Wanted result: all current reviewed-safe `universal-inbox` work is one clean `main` history, pushed, deployed through the canonical runtime surfaces, and proven by automated plus real-browser tests.
 Shortest real canary: authenticated `msg.bezrabotnyi.com` browser journey shows the user dashboard and a working fresh Telegram QR after the deployed unified commit.
@@ -35,3 +35,13 @@ Live canary blocker after the first deploy:
 - The canonical deploy recreated `/var/lib/universal-inbox` as `notification-center:notification-center 0750`, removing traversal for the `roomhacker` Gmail and QR services. The new `account-2` route worked but the QR runtime logged `secure Telegram credential is unavailable`.
 - Root cause proof: as `roomhacker`, all three existing age credential files and the Gmail database were unreadable through the parent directory; as `notification-center`, the core `inbox.sqlite3` was not writable because it was owned by `roomhacker`.
 - Deployment-contract fix: reapply a scoped `roomhacker:rwx` ACL to the shared state root on every deploy and restore `notification-center` ownership only for the core `inbox.sqlite3*` files.
+
+Release and live evidence:
+
+- Product integration commit `078bfbb` and deployment-contract fix `0b1a95a` were pushed linearly to `origin/main`.
+- Canonical immutable deployment points `/opt/universal-inbox` to `/opt/universal-inbox-releases/0b1a95a32b3de131d9337f117821cebc224aec76`.
+- State probes passed: `roomhacker` can read/decrypt the existing Telegram QR credentials and write Gmail state; `notification-center` can write the core Inbox database.
+- All five Universal Inbox services are active after resetting the WhatsApp start-limit caused by the pre-fix permission loop.
+- Managed nginx source already contained the required auth boundary, but live `/etc/nginx` had drifted and removed it. The exact committed vhost was restored with backup, `nginx -t`, and reload; unauthenticated `/`, `/telegram-qr/`, and `/whatsapp-qr/` now redirect to login.
+- Authenticated BrowserOS canary logged in as `roomhacker`, confirmed `careviolan@gmail.com` and `megamen932@gmail.com`, and observed Add Gmail/Telegram/VK/WhatsApp controls.
+- BrowserOS clicked Add Telegram. The first `account-2` attempt reproduced the state permission error; after the deployment fix, the same prefixed retry reached `account-2 waiting`. Final page content contains both `account-1 waiting` and `account-2 waiting`, each with a Telegram login QR, and no `error`/`Try again` state.
