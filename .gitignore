@@ -16,6 +16,7 @@ env/
 *.sqlite3-shm
 
 graphify-out/
+.agents/shared-session/
 dist/
 build/
 *.egg-info/
