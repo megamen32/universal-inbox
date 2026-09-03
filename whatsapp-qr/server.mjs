@@ -56,9 +56,12 @@ async function registerAccount(slot, jid) {
 async function ingest(slot, message) {
   const key = message.key || {};
   const sender = normSender(key.remoteJid) || "whatsapp";
+  const isGroup = typeof sender === "string" && sender.endsWith("@g.us");
   const body = message.message?.conversation || message.message?.extendedTextMessage?.text || message.message?.imageMessage?.caption || message.message?.videoMessage?.caption || (message.message?.imageMessage ? "[WhatsApp image]" : message.message?.videoMessage ? "[WhatsApp video]" : "");
   if (!body || key.fromMe) return;
-  await postUserIo("/v1/messages", { route_id: "whatsapp-reply", message: { schema: "universal.inbox.message.v1", source: "whatsapp", message_id: `${slot}:${key.id || Date.now()}`, sender, body } });
+  const envelope = { schema: "universal.inbox.message.v1", source: "whatsapp", message_id: `${slot}:${key.id || Date.now()}`, sender, body };
+  if (!isGroup && message.pushName) envelope.sender_name = String(message.pushName).slice(0, 128);
+  await postUserIo("/v1/messages", { route_id: "whatsapp-reply", message: envelope });
 }
 
 async function start(slot) {
