@@ -1,5 +1,5 @@
 import http from "node:http";
-import { mkdirSync, readdirSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import makeWASocket, { Browsers, DisconnectReason, fetchLatestBaileysVersion, fetchLatestWaWebVersion, useMultiFileAuthState } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
@@ -12,12 +12,29 @@ const userIoUrl = process.env.UNIVERSAL_USERIO_URL || "http://127.0.0.1:18093";
 const slots = new Map();
 let nextSlot = 1;
 mkdirSync(sessionsDir, { recursive: true, mode: 0o700 });
+const knownSlots = [];
 for (const name of readdirSync(sessionsDir, { withFileTypes: true })) {
   const match = /^account-(\d+)$/.exec(name.name);
-  if (name.isDirectory() && match) { slots.set(`account-${match[1]}`, { status: "idle" }); nextSlot = Math.max(nextSlot, Number(match[1]) + 1); }
+  if (name.isDirectory() && match) { slots.set(`account-${match[1]}`, { status: "idle" }); nextSlot = Math.max(nextSlot, Number(match[1]) + 1); knownSlots.push(`account-${match[1]}`); }
 }
+// Reconnect every persisted session at boot; without this the slots stay "idle"
+// until a human opens /?slot=... and all ingestion silently stops after a restart.
+for (const slot of knownSlots) void start(slot);
 
 const escape = (value) => String(value).replace(/[&<>\"]/g, (char) => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;"}[char]));
+// WhatsApp hands out anonymous @lid JIDs alongside real phone JIDs; the same
+// person then splits into two conversations. Learn lid->phone mappings so
+// ingested senders are normalized to one stable phone JID per person.
+const lidMapPath = join(stateDir, "lid-map.json");
+let lidMap = {};
+try { lidMap = JSON.parse(readFileSync(lidMapPath, "utf8")) || {}; } catch { lidMap = {}; }
+const learnLid = (lid, jid) => {
+  if (typeof lid === "string" && lid.endsWith("@lid") && typeof jid === "string" && jid.endsWith("@s.whatsapp.net") && lidMap[lid] !== jid) {
+    lidMap[lid] = jid;
+    try { writeFileSync(lidMapPath, JSON.stringify(lidMap)); } catch (error) { console.error("LID map save failed", error.message); }
+  }
+};
+const normSender = (jid) => (typeof jid === "string" && jid.endsWith("@lid") && lidMap[jid]) || jid;
 const page = (content) => `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Connect WhatsApp</title><style>body{margin:0;font:16px system-ui;background:#111;color:#eee}main{max-width:680px;margin:40px auto;padding:24px}.card{background:#1d1d1d;border-radius:16px;padding:20px;margin:12px 0}.qr{width:min(300px,100%);background:#fff;padding:12px;border-radius:12px}button{padding:12px 16px;border:0;border-radius:10px;font-weight:700;cursor:pointer}</style><main><h1>Connect WhatsApp</h1>${content}</main>`;
 
 function postUserIo(path, payload) {
@@ -38,7 +55,7 @@ async function registerAccount(slot, jid) {
 
 async function ingest(slot, message) {
   const key = message.key || {};
-  const sender = key.remoteJid || "whatsapp";
+  const sender = normSender(key.remoteJid) || "whatsapp";
   const body = message.message?.conversation || message.message?.extendedTextMessage?.text || message.message?.imageMessage?.caption || message.message?.videoMessage?.caption || (message.message?.imageMessage ? "[WhatsApp image]" : message.message?.videoMessage ? "[WhatsApp video]" : "");
   if (!body || key.fromMe) return;
   await postUserIo("/v1/messages", { route_id: "whatsapp-reply", message: { schema: "universal.inbox.message.v1", source: "whatsapp", message_id: `${slot}:${key.id || Date.now()}`, sender, body } });
@@ -58,6 +75,10 @@ async function start(slot) {
   const socket = makeWASocket({ version, auth: auth.state, browser: Browsers.ubuntu("Universal UserIO"), printQRInTerminal: false, syncFullHistory: true });
   slots.set(slot, { status: "waiting", socket });
   socket.ev.on("creds.update", auth.saveCreds);
+  socket.ev.on("contacts.upsert", (contacts) => {
+    for (const contact of contacts || []) learnLid(contact.lid, contact.jid || (typeof contact.id === "string" && contact.id.endsWith("@s.whatsapp.net") ? contact.id : undefined));
+  });
+  socket.ev.on("chats.phoneNumberShare", ({ lid, jid }) => learnLid(lid, jid));
   socket.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
     const item = slots.get(slot) || {};
     if (qr) slots.set(slot, { ...item, status: "waiting", qr: await QRCode.toDataURL(qr), socket });
