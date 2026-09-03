@@ -11,6 +11,9 @@ const stateDir = "/var/lib/universal-inbox/telegram-qr";
 const keyPath = "/var/lib/universal-inbox/secret-agent/telegram-qr.agekey";
 const sessionsDir = `${stateDir}/sessions`;
 const userIoUrl = process.env.UNIVERSAL_USERIO_URL || "http://127.0.0.1:18093";
+// Optional non-interactive 2FA password (overpod-style): answered locally via
+// SRP, never persisted. The interactive page form is the default path.
+const env2faPassword = (process.env.TELEGRAM_2FA_PASSWORD || process.env.USERIO_TELEGRAM_2FA_PASSWORD || "").trim();
 const slots = new Map();
 let nextSlot = 1;
 
@@ -28,7 +31,7 @@ function secretPath(name) {
 }
 
 function decrypt(name) {
-  const result = spawnSync("age", ["--decrypt", "-i", keyPath, secretPath(name)], { encoding: "utf8" });
+  const result = spawnSync("age", ["--decrypt", "-i", keyPath, secretPath(name)], { encoding: "utf-8" });
   if (result.status !== 0) throw new Error("secure Telegram credential is unavailable");
   return result.stdout.trim();
 }
@@ -71,7 +74,7 @@ function registerAccount(slot, user) {
 }
 
 function page(content) {
-  return `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Connect Telegram</title><style>body{margin:0;font:16px system-ui;background:#111;color:#eee}main{max-width:680px;margin:40px auto;padding:24px}.card{background:#1d1d1d;border-radius:16px;padding:20px;margin:12px 0}button{padding:12px 16px;border:0;border-radius:10px;font-weight:700;cursor:pointer}.qr{width:min(300px,100%);background:#fff;padding:12px;border-radius:12px}</style><main><h1>Connect Telegram</h1>${content}</main>`;
+  return `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Connect Telegram</title><style>body{margin:0;font:16px system-ui;background:#111;color:#eee}main{max-width:680px;margin:40px auto;padding:24px}.card{background:#1d1d1d;border-radius:16px;padding:20px;margin:12px 0}button{padding:12px 16px;border:0;border-radius:10px;font-weight:700;cursor:pointer}input{box-sizing:border-box}.qr{width:min(300px,100%);background:#fff;padding:12px;border-radius:12px}</style><main><h1>Connect Telegram</h1>${content}</main>`;
 }
 
 async function start(slot) {
@@ -79,6 +82,7 @@ async function start(slot) {
   if (!current || ["connecting", "waiting", "connected"].includes(current.status)) return;
   slots.set(slot, { status: "connecting" });
   let client;
+  let authErrors = 0;
   try {
     client = new TelegramClient(new StringSession(""), credentials().apiId, credentials().apiHash, { connectionRetries: 3 });
     await client.connect();
@@ -87,15 +91,27 @@ async function start(slot) {
       qrCode: async ({ token }) => {
         const encoded = token.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
         const uri = `tg://login?token=${encoded}`;
-        slots.set(slot, { status: "waiting", client, qr: await QRCode.toDataURL(uri) });
+        const state = slots.get(slot) || {};
+        slots.set(slot, { ...state, status: "waiting", client, qr: await QRCode.toDataURL(uri) });
       },
-      password: async () => {
-        slots.set(slot, { status: "password-required", client });
-        return new Promise(() => {});
+      // 2FA: env password (non-interactive, overpod-style) or the interactive
+      // page form below. Never dead-end: the previous version returned a
+      // never-resolving promise here, silently hanging every 2FA account.
+      password: async (hint) => {
+        if (env2faPassword) return env2faPassword;
+        const state = slots.get(slot) || {};
+        return await new Promise((resolve) => {
+          slots.set(slot, { ...state, status: "password-required", client, passwordHint: hint || "", passwordResolve: resolve });
+        });
       },
+      // GramJS semantics: return true to STOP the attempt, false to retry.
+      // The previous version returned true, so any recoverable error (e.g. a
+      // wrong 2FA password) silently cancelled the whole login.
       onError: async (error) => {
-        console.error("Telegram QR authentication error:", (error && error.message) || "unknown");
-        return true;
+        const message = (error && (error.errorMessage || error.message)) || "unknown";
+        console.error("Telegram QR authentication error:", message);
+        authErrors += 1;
+        return authErrors >= 5;
       },
     });
     const session = client.session.save();
@@ -111,8 +127,11 @@ async function start(slot) {
       slots.set(slot, { status: "connected-unregistered", name: displayName });
     }
   } catch (error) {
-    console.error("Telegram QR session error:", (error && error.message) || "unknown");
-    slots.set(slot, { status: "error" });
+    console.error("Telegram QR session error:", (error && (error.errorMessage || error.message)) || "unknown");
+    const state = slots.get(slot) || {};
+    const { passwordResolve, ...rest } = state;
+    if (passwordResolve) passwordResolve("");
+    slots.set(slot, { ...rest, status: "error" });
   } finally {
     if (client) await client.disconnect().catch(() => {});
   }
@@ -144,10 +163,27 @@ http.createServer((req, res) => {
     res.writeHead(302, { Location: `${publicPrefix}/?slot=${slot}` });
     return res.end();
   }
+  if (url.pathname === "/password" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      const password = (new URLSearchParams(body).get("password") || "").trim();
+      const state = slots.get(slot);
+      if (state && state.passwordResolve) {
+        const resolve = state.passwordResolve;
+        const { passwordResolve, passwordHint, ...rest } = state;
+        slots.set(slot, { ...rest, status: "connecting" });
+        resolve(password);
+      }
+      res.writeHead(302, { Location: `${publicPrefix}/?slot=${encodeURIComponent(slot || "")}` });
+      res.end();
+    });
+    return;
+  }
   if (url.pathname === "/" && slot) restoreSlot(slot);
   const cards = [...slots.entries()].map(([id, item]) => {
     const refreshing = item.status === "connecting" || item.status === "waiting";
-    return `<div class=card><b>${escape(id)}</b><p>${escape(item.status)}${item.name ? `: ${escape(item.name)}` : ""}</p>${item.qr ? `<img class=qr src="${item.qr}" alt="Telegram login QR"><p>Telegram → Settings → Devices → Link Desktop Device</p>` : ""}${item.status === "error" ? `<a href="${publicPrefix}/start?slot=${encodeURIComponent(id)}"><button>Try again</button></a>` : ""}${refreshing ? "<script>setTimeout(()=>location.reload(),1000)</script>" : ""}</div>`;
+    return `<div class=card><b>${escape(id)}</b><p>${escape(item.status)}${item.name ? `: ${escape(item.name)}` : ""}</p>${item.qr ? `<img class=qr src="${item.qr}" alt="Telegram login QR"><p>Telegram → Settings → Devices → Link Desktop Device</p>` : ""}${item.status === "password-required" ? `<form method="post" action="${publicPrefix}/password?slot=${encodeURIComponent(id)}"><p>2FA password required${item.passwordHint ? ` (hint: ${escape(item.passwordHint)})` : ""}</p><input type=password name=password autofocus autocomplete=off style="width:100%;padding:12px;border:0;border-radius:10px;margin:8px 0"><button type=submit>Confirm</button></form>` : ""}${item.status === "error" ? `<a href="${publicPrefix}/start?slot=${encodeURIComponent(id)}"><button>Try again</button></a>` : ""}${refreshing ? "<script>setTimeout(()=>location.reload(),1000)</script>" : ""}</div>`;
   }).join("");
   res.setHeader("content-type", "text/html; charset=utf-8");
   res.end(page(`<a href="${publicPrefix}/new"><button>+ Telegram account</button></a>${cards}`));
