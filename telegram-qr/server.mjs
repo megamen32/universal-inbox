@@ -349,7 +349,7 @@ async function syncAccount(slot) {
       const accountId = `telegram:${me.id}`;
       const dialogLabels = new Map();
       const labelPeers = { labelPeers: new Map(), idPeers: new Map() };
-      liveSlots.set(slot, { client, labelPeers });
+      liveSlots.set(slot, { client, labelPeers, accountId });
       const chats = await backfillDialogs(slot, client, accountId, dialogLabels, labelPeers);
       client.addEventHandler(
         (event) => { ingestLive(slot, client, accountId, dialogLabels, event).catch((error) => console.error(`sync ${slot} live error:`, (error && error.message) || error)); },
@@ -479,19 +479,42 @@ http.createServer(async (req, res) => {
         const payload = JSON.parse(raw || "{}");
         const chat = String(payload.chat || "").trim();
         const chatId = String(payload.chat_id || "").trim();
+        const wantAccount = String(payload.account_id || "").trim();
+        const wantSlot = String(payload.slot || "").trim();
         const text = String(payload.body || "").trim();
         if ((!chat && !chatId) || !text) {
           res.writeHead(400, { "content-type": "application/json" });
           return res.end(JSON.stringify({ error: "chat (or chat_id) and body are required" }));
         }
-        for (const [slot, item] of liveSlots) {
+        // When an account is requested, send strictly from it (404 if that
+        // account is offline or does not know the chat) — never fall back to
+        // another slot, so the sender identity always matches the dashboard.
+        const candidates = [...liveSlots].filter(([slot]) =>
+          !wantAccount && !wantSlot ? true : wantSlot ? slot === wantSlot : false);
+        const chosen = wantAccount
+          ? [...liveSlots].find(([, item]) => item.accountId === wantAccount)
+          : null;
+        const trySend = async (slot, item) => {
           const peers = item.labelPeers;
           const peer = (chat && peers.labelPeers.get(chat)) || (chatId && peers.idPeers.get(chatId)) || null;
-          if (!peer || !item.client) continue;
+          if (!peer || !item.client) return false;
           const sent = await item.client.sendMessage(peer, { message: text });
           console.log(`send ${slot}: "${chat || chatId}" msg ${sent && sent.id}`);
           res.writeHead(200, { "content-type": "application/json" });
-          return res.end(JSON.stringify({ ok: true, slot, message_id: String(sent && sent.id) }));
+          res.end(JSON.stringify({ ok: true, slot, account_id: item.accountId, message_id: String(sent && sent.id) }));
+          return true;
+        };
+        if (chosen) {
+          if (await trySend(chosen[0], chosen[1])) return;
+          res.writeHead(404, { "content-type": "application/json" });
+          return res.end(JSON.stringify({ error: `account ${wantAccount} does not know chat "${chat || chatId}"` }));
+        }
+        if (wantSlot || wantAccount) {
+          res.writeHead(404, { "content-type": "application/json" });
+          return res.end(JSON.stringify({ error: `account ${wantAccount || wantSlot} is not connected` }));
+        }
+        for (const [slot, item] of candidates) {
+          if (await trySend(slot, item)) return;
         }
         res.writeHead(404, { "content-type": "application/json" });
         res.end(JSON.stringify({ error: `no connected account knows chat "${chat || chatId}"` }));
